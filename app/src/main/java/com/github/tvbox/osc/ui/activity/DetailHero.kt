@@ -30,9 +30,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -43,7 +47,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.components.HeroSpotlightFadeStops
-import com.github.tvbox.osc.ui.components.HomeBackdrop
 import com.github.tvbox.osc.ui.components.ImagePalette
 import com.github.tvbox.osc.ui.components.LocalTopBarGlassBackdrop
 import com.github.tvbox.osc.ui.components.TopBarActionBox
@@ -115,8 +118,8 @@ internal fun DetailHero(
     type: String?,
     collected: Boolean,
     followed: Boolean,
-    backdropColor: Color,
-    onBackdropSeed: (Int?) -> Unit,
+    onPosterPic: (String) -> Unit,
+    onSeed: (Int?) -> Unit,
     onBack: () -> Unit,
     onPlay: () -> Unit,
     onMusic: () -> Unit,
@@ -127,7 +130,7 @@ internal fun DetailHero(
 ) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(picture) {
-        if (HomeBackdrop.has(picture)) onBackdropSeed(HomeBackdrop.seedOf(picture))
+        if (!picture.isNullOrEmpty()) onPosterPic(picture)
     }
     val glassBackdrop = rememberLayerBackdrop(onDraw = { drawContent() })
     val circleColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = HeroCircleAlpha)
@@ -140,34 +143,37 @@ internal fun DetailHero(
                     .coerceIn(HeroMinHeight, HeroMaxHeight),
             ),
     ) {
-        Box(modifier = Modifier.fillMaxSize().layerBackdrop(glassBackdrop)) {
-            VodPoster(
-                name = title,
-                pic = picture,
-                preferLarge = true,
-                modifier = Modifier.fillMaxSize(),
-                onImage = { image ->
-                    if (!HomeBackdrop.has(picture)) {
-                        scope.launch {
-                            val seed = withContext(Dispatchers.Default) { ImagePalette.seedOf(image) }
-                            HomeBackdrop.put(picture, seed)
-                            onBackdropSeed(seed)
-                        }
-                    }
-                },
-            )
-        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        *HeroSpotlightFadeStops
-                            .map { (position, alpha) -> position to backdropColor.copy(alpha = alpha) }
-                            .toTypedArray(),
-                    ),
-                ),
-        )
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            *HeroSpotlightFadeStops
+                                .map { (position, alpha) -> position to Color.White.copy(alpha = 1f - alpha) }
+                                .toTypedArray(),
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
+        ) {
+            Box(modifier = Modifier.fillMaxSize().layerBackdrop(glassBackdrop)) {
+                VodPoster(
+                    name = title,
+                    pic = picture,
+                    preferLarge = true,
+                    modifier = Modifier.fillMaxSize(),
+                    onImage = { image ->
+                        scope.launch {
+                            val seed = withContext(Dispatchers.Default) { ImagePalette.seedOf(image) }
+                            onSeed(seed)
+                        }
+                    },
+                )
+            }
+        }
         CompositionLocalProvider(LocalTopBarGlassBackdrop provides glassBackdrop) {
             Row(
                 modifier = Modifier

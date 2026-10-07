@@ -33,7 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -54,8 +53,8 @@ internal fun DetailContent(
     vm: DetailViewModel,
     revision: Int,
     playing: Boolean,
-    backdropColor: Color,
-    onBackdropSeed: (Int?) -> Unit,
+    onPosterPic: (String) -> Unit,
+    onSeed: (Int?) -> Unit,
     onCardLongClick: (Movie.Video) -> Unit,
 ) {
     val info = vm.vodInfo ?: return
@@ -115,8 +114,8 @@ internal fun DetailContent(
                     type = info.type,
                     collected = collected,
                     followed = followRecord != null,
-                    backdropColor = backdropColor,
-                    onBackdropSeed = onBackdropSeed,
+                    onPosterPic = onPosterPic,
+                    onSeed = onSeed,
                     onBack = { activity.onBackPressedDispatcher.onBackPressed() },
                     onPlay = { vm.onPlayRequested() },
                     onMusic = { activity.openMusicPlayer() },

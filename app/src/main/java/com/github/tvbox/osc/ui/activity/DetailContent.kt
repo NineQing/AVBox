@@ -43,6 +43,9 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.data.FollowDays
 import com.github.tvbox.osc.ui.components.FollowReminderSheet
+import com.github.tvbox.osc.ui.components.SettingsCard
+import com.github.tvbox.osc.ui.components.SettingsCardPosition
+import com.github.tvbox.osc.ui.components.SettingsOptionRow
 import com.github.tvbox.osc.ui.theme.filterChipColors
 
 @Composable
@@ -78,15 +81,29 @@ internal fun DetailContent(
     ) {
         if (playing) {
             item(key = "actions") {
-                DetailActionRow(
-                    collected = collected,
-                    followed = followRecord != null,
-                    onMusic = { activity.openMusicPlayer() },
-                    onCast = { activity.openCast() },
-                    onCollect = { vm.toggleCollect() },
-                    onFollow = { followScheduleOpen = true },
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
-                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                ) {
+                    Text(
+                        text = info.name ?: "TVBox",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    DetailActionRow(
+                        collected = collected,
+                        followed = followRecord != null,
+                        onMusic = { activity.openMusicPlayer() },
+                        onCast = { activity.openCast() },
+                        onCollect = { vm.toggleCollect() },
+                        onFollow = { followScheduleOpen = true },
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
             }
         } else {
             item(key = "hero") {
@@ -110,91 +127,110 @@ internal fun DetailContent(
             }
         }
 
-        item(key = "header") {
-            val desc = remember(info.des) { removeHtmlTag(info.des) }
-            Column(
+        item(key = "source") {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
-                    .padding(start = 6.dp, end = 6.dp, top = 12.dp)
-                    .background(MaterialTheme.colorScheme.surfaceBright, RoundedCornerShape(16.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp)
+                    .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(50))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Text(
-                    text = info.name ?: "TVBox",
-                    style = MaterialTheme.typography.titleLarge,
+                    text = stringResource(R.string.detail_source, displaySourceName),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
                 )
-                val metaParts = listOfNotNull(
-                    if (info.year > 0) info.year.toString() else null,
-                    info.area?.takeIf { it.isNotBlank() },
-                    info.type?.takeIf { it.isNotBlank() },
-                )
-                Column(modifier = Modifier.padding(top = 4.dp)) {
-                    if (metaParts.isNotEmpty()) {
-                        Text(
-                            text = metaParts.joinToString(" · "),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
+            }
+        }
+
+        item(key = "desc") {
+            val desc = remember(info.des) { removeHtmlTag(info.des) }
+            if (desc.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                ) {
+                    Text(
+                        text = desc,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = if (descExpanded) Int.MAX_VALUE else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { descExpanded = !descExpanded },
+                    )
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
+                            .fillMaxWidth()
                             .padding(top = 4.dp)
-                            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(50))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { descExpanded = !descExpanded },
                     ) {
+                        Spacer(Modifier.weight(1f))
                         Text(
-                            text = stringResource(R.string.detail_source, displaySourceName),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            text = stringResource(if (descExpanded) R.string.detail_collapse else R.string.detail_expand),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.ArrowDropDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .rotate(if (descExpanded) 180f else 0f),
                         )
                     }
                 }
-                if (desc.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(12.dp))
-                            .padding(12.dp)
+            }
+        }
+
+        if (flags.size > 1) {
+            item(key = "flags") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 6.dp, end = 6.dp, top = 12.dp),
+                ) {
+                    SettingsCard(
+                        position = SettingsCardPosition.SINGLE,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceBright,
                     ) {
-                        Text(
-                            text = desc,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = if (descExpanded) Int.MAX_VALUE else 3,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { descExpanded = !descExpanded },
-                        )
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .padding(top = 4.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { descExpanded = !descExpanded },
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
                         ) {
-                            Spacer(Modifier.weight(1f))
+                            SectionTitleIcon(painterResource(R.drawable.ic_detail_line))
                             Text(
-                                text = stringResource(if (descExpanded) R.string.detail_collapse else R.string.detail_expand),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
+                                text = stringResource(R.string.detail_line),
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(start = 8.dp),
                             )
-                            Icon(
-                                imageVector = Icons.Filled.ArrowDropDown,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .rotate(if (descExpanded) 180f else 0f),
+                        }
+                        flags.forEach { flag ->
+                            SettingsOptionRow(
+                                title = flag.name ?: "",
+                                selected = flag.name == currentFlag,
+                                onClick = { vm.onFlagClick(flag.name ?: "") },
+                                trailing = {
+                                    Text(
+                                        text = stringResource(
+                                            R.string.detail_line_video_count,
+                                            info.seriesMap?.get(flag.name)?.size ?: 0,
+                                        ),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 12.dp),
+                                    )
+                                },
                             )
                         }
                     }
@@ -213,25 +249,6 @@ internal fun DetailContent(
                             selected = index == qualitySelected,
                             onClick = { vm.onQualityClick(index, activity.playbackFacts()) },
                             label = { Text(option) },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = MaterialTheme.colorScheme.filterChipColors(),
-                        )
-                    }
-                }
-            }
-        }
-
-        if (flags.size > 1) {
-            item(key = "flags") {
-                ChipRow(
-                    title = stringResource(R.string.detail_line),
-                    leading = { SectionTitleIcon(painterResource(R.drawable.ic_detail_line)) },
-                ) {
-                    itemsIndexed(flags, key = { i, f -> "${i}_${f.name}" }) { _, flag ->
-                        FilterChip(
-                            selected = flag.name == currentFlag,
-                            onClick = { vm.onFlagClick(flag.name ?: "") },
-                            label = { Text(flag.name ?: "") },
                             shape = RoundedCornerShape(20.dp),
                             colors = MaterialTheme.colorScheme.filterChipColors(),
                         )

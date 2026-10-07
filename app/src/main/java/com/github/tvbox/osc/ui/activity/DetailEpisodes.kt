@@ -63,7 +63,7 @@ internal fun EpisodeRow(
     Column(
         modifier = Modifier
             .padding(start = 6.dp, end = 6.dp, top = 12.dp)
-            .background(MaterialTheme.colorScheme.surfaceBright, RoundedCornerShape(16.dp))
+            .background(detailCardColor(), RoundedCornerShape(16.dp))
             .padding(vertical = 12.dp)
     ) {
         Row(

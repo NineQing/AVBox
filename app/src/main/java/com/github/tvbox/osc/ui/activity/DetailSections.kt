@@ -23,6 +23,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -54,6 +55,12 @@ internal fun SectionTitleIcon(imageVector: ImageVector) {
     )
 }
 
+internal const val DetailCardAlpha = 0.5f
+
+@Composable
+internal fun detailCardColor(): Color =
+    MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = DetailCardAlpha)
+
 @Composable
 internal fun SourceSection(vm: DetailViewModel, currentSourceName: String?, revision: Int) {
     @Suppress("UNUSED_EXPRESSION") revision
@@ -67,7 +74,7 @@ internal fun SourceSection(vm: DetailViewModel, currentSourceName: String?, revi
     Column(
         modifier = Modifier
             .padding(start = 6.dp, end = 6.dp, top = 12.dp)
-            .background(MaterialTheme.colorScheme.surfaceBright, RoundedCornerShape(16.dp))
+            .background(detailCardColor(), RoundedCornerShape(16.dp))
             .padding(vertical = 12.dp)
     ) {
         Row(

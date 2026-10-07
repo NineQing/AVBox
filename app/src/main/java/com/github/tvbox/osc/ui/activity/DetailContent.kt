@@ -1,8 +1,11 @@
 package com.github.tvbox.osc.ui.activity
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,10 +14,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -33,8 +39,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
@@ -42,9 +50,6 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.data.FollowDays
 import com.github.tvbox.osc.ui.components.FollowReminderSheet
-import com.github.tvbox.osc.ui.components.SettingsCard
-import com.github.tvbox.osc.ui.components.SettingsCardPosition
-import com.github.tvbox.osc.ui.components.SettingsOptionRow
 import com.github.tvbox.osc.ui.theme.filterChipColors
 
 @Composable
@@ -126,31 +131,13 @@ internal fun DetailContent(
             }
         }
 
-        item(key = "source") {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .padding(start = 16.dp, end = 16.dp, top = 12.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(50))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.detail_source, displaySourceName),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
         item(key = "desc") {
             val desc = remember(info.des) { removeHtmlTag(info.des) }
             if (desc.isNotEmpty()) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp),
                 ) {
                     Text(
                         text = desc,
@@ -190,46 +177,48 @@ internal fun DetailContent(
             }
         }
 
-        if (flags.size > 1) {
+        if (flags.isNotEmpty()) {
             item(key = "flags") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 6.dp, end = 6.dp, top = 12.dp),
+                        .padding(top = 16.dp),
                 ) {
-                    SettingsCard(
-                        position = SettingsCardPosition.SINGLE,
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceBright,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
-                        ) {
-                            SectionTitleIcon(painterResource(R.drawable.ic_detail_line))
-                            Text(
-                                text = stringResource(R.string.detail_line),
-                                style = MaterialTheme.typography.titleLarge,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
-                        }
-                        flags.forEach { flag ->
-                            SettingsOptionRow(
-                                title = flag.name ?: "",
+                        SectionTitleIcon(painterResource(R.drawable.ic_detail_line))
+                        Text(
+                            text = stringResource(R.string.detail_line),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = stringResource(R.string.detail_source, displaySourceName),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .padding(start = 12.dp)
+                                .widthIn(max = 180.dp),
+                        )
+                    }
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        itemsIndexed(flags, key = { i, f -> "${i}_${f.name}" }) { _, flag ->
+                            LineCard(
+                                name = flag.name ?: "",
+                                count = info.seriesMap?.get(flag.name)?.size ?: 0,
                                 selected = flag.name == currentFlag,
                                 onClick = { vm.onFlagClick(flag.name ?: "") },
-                                trailing = {
-                                    Text(
-                                        text = stringResource(
-                                            R.string.detail_line_video_count,
-                                            info.seriesMap?.get(flag.name)?.size ?: 0,
-                                        ),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(end = 12.dp),
-                                    )
-                                },
                             )
                         }
                     }
@@ -282,6 +271,68 @@ internal fun DetailContent(
     }
 }
 
+private val LineCardWidth = 160.dp
+
+@Composable
+private fun LineCard(
+    name: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = Modifier
+            .width(LineCardWidth)
+            .clip(shape)
+            .background(detailCardColor())
+            .then(
+                if (selected) {
+                    Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, shape)
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.player_ic_play),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary),
+                    modifier = Modifier.size(12.dp),
+                )
+            }
+            Text(
+                text = name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .weight(1f, fill = false),
+            )
+        }
+        Text(
+            text = stringResource(R.string.detail_line_video_count, count),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(start = 30.dp, top = 6.dp),
+        )
+    }
+}
+
 @Composable
 private fun ChipRow(
     title: String,
@@ -292,7 +343,7 @@ private fun ChipRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 6.dp, end = 6.dp, top = 12.dp)
-            .background(MaterialTheme.colorScheme.surfaceBright, RoundedCornerShape(16.dp))
+            .background(detailCardColor(), RoundedCornerShape(16.dp))
             .padding(vertical = 12.dp),
     ) {
         Row(

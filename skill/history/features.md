@@ -4801,3 +4801,56 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **验证**:`.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL;单测 **700 用例 / 0 失败**;`isFollowed`/`deleteAll` 全仓复核已无本轮残留(命中项均属收藏/历史/TrackMemory 的既有实现);行尾 LF 已核对;i18n 硬闸门 `ui 层 0 处`、key 检查仅剩既有的 `toast_permission_required` 与既有 `播放` 同值;**未真机走查**(设备未在线,APK 已构建待装)。
 
 **收尾判定**:按终止线(无阻断/高/中,剩余全为既有或口味差异)⇒ **代码侧满足收尾条件**;交付侧仍差"设备上线装机走查"(迁移升级路径 + 某天/本周视图角标 + 已看对勾)。⚠️ 提交时记得带上未跟踪的 `app/schemas/com.github.tvbox.osc.data.AppDataBase/2.json` 与 `ic_follow_update_time.xml` / `ic_follow_update_week.xml`。
+
+## 首页展示方式:标签改「沉浸 / 普通」+ 默认改沉浸(2026-10-08,未 commit)
+
+**需求(用户,附截图)**:`SearchSettingsSheet` 顶部「首页海报」分段的两个标签由「横向展示 / 竖向展示」改为**「沉浸 / 普通」**,并把**默认值改成沉浸**。
+
+**背景(回答用户 Q&A 时核到的两件事)**:①`HomeSettings.current()` 原判据是 `KV.get(KEY_LAYOUT, VALUE_LAYOUT_VERTICAL)`,即键缺失(新装 / 清数据)时 = 竖排;全仓写这个键的只有该分段按钮(无首启写入点),所以"默认"就是键缺失时的取值;②用户截图里高亮的是「横向展示」,属该机已存过 `home_layout=horizontal` 的历史值,不是默认值(顺带确认:整屏 Hero + 海报取色只在 `Horizontal` 渲染,`Vertical` 走 `HomeGridLayout` 栅格)。
+
+**改动(4 文件)**:`util/HomeSettings.kt` 的 `KV.get` 兜底值 `VALUE_LAYOUT_VERTICAL` → `VALUE_LAYOUT_HORIZONTAL`(一行;`KEY_LAYOUT` / 值常量 / 枚举名 `Horizontal`/`Vertical` 全部不动,key 名仍按横竖语义命名);三层资源同步改值 —— `values`「沉浸 / 普通」、`values-en`「Immersive / Standard」、`values-b+zh+Hant`「沉浸 / 普通」;港差异层无这两条(回落基础层),不动。
+
+**影响面**:仅"从未切过这个设置"的设备会跟着变成沉浸;显式选过竖向(`home_layout=vertical`)的设备保持竖向。首屏分类请求的排版参数(`HomeViewModel` 的 `getSort(key, horizontal)`)与刷新范围随之对齐,无需额外改动。
+
+**验证**:`.\gradlew.bat :app:assembleDebug` BUILD SUCCESSFUL;`i18n_align.py` 三档 PASS(`en` / `b+zh+Hant` 548=548,`zh-rHK --subset` 仅既有的 4 条 `REDUNDANT-VS-UPPER`);`i18n_check_keys.py` 只剩既有的 `toast_permission_required` 未用与「播放」同值双 key;行尾 LF 已核对;**未真机走查**(设备未在线)。
+
+**文档同步**:`skill/avbox-mobile-ui-spec.md` —— §4.6「结果展示方式」的默认值警示条改为"搜索页默认竖排、首页自 2026-10-08 起默认 `Horizontal`(沉浸)"并记下标签改名;§「窗口分档」那句补上"键缺失时默认 `Horizontal`"。`.codebuddy` / `.trae` 两镜像已同步。
+
+## tab 切换路过中间页闪加载指示器:活跃页判据改 targetPage + 列表 loading 只在首次(2026-10-08,未 commit)
+
+**需求(用户报现象)**:「从首页切换 tab 到我的页时中途会闪烁 md3e 的几何圆形加载指示器,大概是到了追剧这个位置的时候」。按「报现象先给方案」先只做排查,给 A/B/C 三案与推荐(A+B),用户拍板 **A+B 一起修**。
+
+**根因链(三环,全部取证)**:
+1. `MainScreen` 用 `pagerState.currentPage` 决定哪一页是活跃页(RESUMED)。`currentPage` 的语义本仓早有登记 = "滚动途中离吸附点最近的那页,跨多页滚动时会依次经过中间页"(2026-09-23 那条 tab 文字闪烁的真机 bug,当时改用 `targetPage` 修掉;`avbox-mobile-ui-spec.md` §4.11 有这条)。首页→我的要跨 1、2 两页 ⇒ **追剧页(index 2)在动画中途被 RESUMED**。
+2. 追剧页的 ON_RESUME 挂着刷新:`FollowingPage.kt` 的 `LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh() }`。
+3. `FollowingViewModel.refresh()` 的加载态条件是"列表为空就回到 loading"(`if (items.value.isEmpty()) loading.value = true`)⇒ 命中 ⇒ 满屏 64dp `ContainedLoadingIndicator` 画几帧,IO 跑完才切回空态。
+**取证**:① 从设备只读拉库(`run-as … exec-out cat databases/tvbox.v4.db`,TRUNCATE 模式单文件即一致)查得 **`vodFollow=0` / `vodCollect=3` / `vodRecord=4`** ⇒ 第 3 环条件成立;② 只有追剧闪、记录(index 1)不闪,与"记录页没有 ON_RESUME 刷新、历史/收藏条目非空"一致;③ 反证判据:追剧列表一旦非空,闪烁应消失。
+
+**改动(4 文件)**:
+- **A**:`MainScreen.kt` 页面级 owner 的判据 `page == pagerState.currentPage` → **`page == pagerState.targetPage`**(经过页不再被 RESUMED;与 §4.11 的 tab 选择态同源)。副作用 = 目标页的 ON_RESUME 从"停稳后"提前到"动画开始",无观感差。
+- **B**:三个列表 VM 删掉"列表为空就回到 loading 态"那行 —— `FollowingViewModel` / `HistoryViewModel` / `CollectViewModel`(同款写法,一并统一;`loading` 今后只表示"首次加载中",刷新一律静默)。顺带消掉同类现象:空追剧页从别的 tab 回访也会闪一次;切源/清空后列表为空的刷新也不再闪。
+- **未取 C**:活跃页判据换成 `settledPage`(只有停稳才 RESUMED,语义最严)留给"手动拖拽经过中间页仍复现"时再用。
+
+**影响面**:`loading` 语义收窄后,空列表在"刷新期间"显示的是上一次的结果(空态),不再有"空态→spinner→空态"的抖动;数据流与 DB 读写路径未动。
+
+**验证**:`.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL;单测 **94 套 / 721 用例 / 0 失败**(与既有基线一致,三个 VM 无既有用例);行尾 LF 已核对;已装机(vivo `10AF1J04JX0016G`,`lastUpdateTime=2026-10-08 05:19:51`)。**走查判据**:①首页点 tab 到「我的」(以及反过来)全程不出现加载指示器;②空追剧页来回切 tab / 退后台回前台不闪;③手动滑动手势跨页时同样不闪(未复现则 C 不用做);④三个列表页正常加载/刷新/空态无回归。
+
+**文档同步**:`skill/avbox-mobile-ui-spec.md` §6.20 —— 「机制」条补上"活跃页 = `pagerState.targetPage`,不是 `currentPage`"与其真机现象;新增「列表页的全屏加载指示器只在首次加载出现」条(含三个 VM 与新增列表页的口径)。`.codebuddy` / `.trae` 两镜像已同步。
+
+## 沉浸式首页接入模糊底(音乐页手法,2026-10-08,未 commit)
+
+**需求(用户)**:先问"音乐播放页是不是用了模糊效果?这种效果能否运用到首页沉浸式布局下" —— 先只做调研与方案(A/B 两落点 + 三条约束),用户拍板 **A+B 一起做**。
+
+**音乐页现状(参照物)**:`MusicPlayerScreen.MusicBackdrop` = 专辑封面 `AsyncImage` + `graphicsLayer{ scale 1.3f }` + `.blur(56.dp)`,上面叠 `surface` 的 `0.22 / 0.5 / 0.88` 三段竖向蒙层。1.3× 放大是防模糊边缘透明化露出底色边,蒙层负责让前景文字可读。
+
+**设计(关键取舍:两层合成一层)**:A(Hero 渐隐露出模糊)与 B(页面级模糊底)**共用同一层模糊**,不各起一层 —— 页面级底座 = 当前停稳页海报的同图 + 1.3× + `blur(40dp)` + 取色蒙层;Hero 侧改用 `CompositingStrategy.Offscreen` + `BlendMode.DstIn`,按**同一条** `HeroSpotlightFadeStops` 曲线把海报自身淡出(`Color.White.copy(alpha = 1f - alpha)`),露出下层。于是"渐变终止边"(马赫带,此前靠把曲线从 4 段调到 7 段压下去的那条)从根上不存在了:海报下面是同一张图的模糊延伸,再往下才是取色底色。
+
+**改动(3 文件)**:①新增 `ui/components/HomeHeroBackdrop.kt`(`homeHeroBackdropSupported` = `SDK_INT >= S`;`Crossfade(pic, tween(200))`;蒙层曲线 = `0f→0.54` 起始档 + `HeroSpotlightFadeStops` 按 `heroFraction` 映射并 `coerceAtLeast(0.6)` + Hero 下方回落段 `0.86 / 0.84`);②`ui/components/HeroSpotlight.kt` 增参 `onPosterPic`(停稳页上报海报 URL)与 `fadeToBackdrop`,渐隐曲线由 `private` 改 `internal` 供底座共用,纯色渐隐降为 `fadeToBackdrop = false` 时的兜底;③`ui/page/HomePage.kt` 在 scaffold 内容的最底层(`when` 之前)铺 `HomeHeroBackdrop`,状态 `backdropPic`,判据 `homeLayout == Horizontal && homeHeroBackdropSupported`。
+
+**为什么蒙层要有 0.6 下限**:上限(标题/评分/圆点所在的 Hero 下缘)必须接近 1.0 —— 文案用 `onSurface`(不是白字),浅色主题 + 深色海报时底色一淡就掉对比度;下限则保证**滚动后**(Hero 滚走、区块标题/空态文字裸落在模糊底上)仍有对比度。两者之间靠"回落段"把模糊透出来(横屏沉浸式首页那层底部渐变遮罩此前已按用户要求全 app 撤掉,故滚动状态下模糊会一直铺到导航栏后面)。
+
+**代价/风险登记**:全屏 `blur(40dp)` 是每帧一次全屏 GPU pass,且停稳页切换的 200ms 内 `Crossfade` 会同时存在两层模糊;本页还有取色链路与液态玻璃源层录制。本次未做帧率实测(用户走查为准),若掉帧:先降半径,再缩短 Crossfade,最后才考虑只在 Hero 区域内模糊。
+
+**验证**:`.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL;单测 **94 套 / 721 用例 / 0 失败**;已装机(vivo `10AF1J04JX0016G`,`lastUpdateTime=2026-10-08 05:28:01`)。**走查判据**:①沉浸式首页 Hero 下缘应从"海报"自然过渡到"同一图的模糊延伸 + 取色底",看不到横向"分隔线/终止边";②标题/评分/圆点在明暗两种海报下都可读;③下滑后区块标题、chips、卡片区文字可读,模糊可见但不抢内容;④Hero 左右滑动:模糊底随停稳页 200ms 换图、不闪、不卡;⑤竖向(普通)布局与 API<31 设备外观与改造前一致(退回纯色底)。
+
+**文档同步**:`skill/avbox-mobile-ui-spec.md` §6.9 新增"沉浸式首页的模糊底只能有一层,且必须带蒙层下限"条(含 API 31 门控、与 Hero 共用曲线、下限不可撤三条硬约束)。`.codebuddy` / `.trae` 两镜像已同步。

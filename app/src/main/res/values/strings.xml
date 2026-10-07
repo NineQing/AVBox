@@ -93,6 +93,7 @@
     <string name="home_no_source">尚未配置订阅接口</string>
     <string name="home_load_timeout">首页加载超时，请检查网络后重试</string>
     <string name="home_recommend">推荐</string>
+    <string name="home_all_categories">全部分类</string>
 
     <string name="search_settings">搜索设置</string>
     <string name="search_no_site">未选择搜索站点，请到首页「搜索设置」里勾选</string>
@@ -269,8 +270,8 @@
     <string name="music_next">下一首</string>
 
     <string name="search_home_poster">首页海报</string>
-    <string name="search_layout_horizontal">横向展示</string>
-    <string name="search_layout_vertical">竖向展示</string>
+    <string name="search_layout_horizontal">沉浸</string>
+    <string name="search_layout_vertical">普通</string>
     <string name="search_exact">精准搜索</string>
     <string name="search_sites">搜索站点</string>
     <string name="search_sites_none_hint">未选择站点，将搜不到结果</string>

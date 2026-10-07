@@ -58,6 +58,7 @@ import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
+import com.github.tvbox.osc.ui.components.VodCardStyle
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.WindowSize
@@ -296,6 +297,7 @@ private fun VideoGrid(
                 video = video,
                 onClick = { onCardClick(video) },
                 onLongClick = { onCardLongClick(video) },
+                style = VodCardStyle.Stacked,
             )
         }
         if (enableLoadMore) {

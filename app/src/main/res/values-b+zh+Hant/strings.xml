@@ -93,6 +93,7 @@
     <string name="home_no_source">尚未設定訂閱介面</string>
     <string name="home_load_timeout">首頁載入逾時，請檢查網路後重試</string>
     <string name="home_recommend">推薦</string>
+    <string name="home_all_categories">全部分類</string>
 
     <string name="search_settings">搜尋設定</string>
     <string name="search_no_site">未選擇搜尋站點，請到首頁「搜尋設定」裡勾選</string>
@@ -269,8 +270,8 @@
     <string name="music_next">下一首</string>
 
     <string name="search_home_poster">首頁海報</string>
-    <string name="search_layout_horizontal">橫向展示</string>
-    <string name="search_layout_vertical">縱向展示</string>
+    <string name="search_layout_horizontal">沉浸</string>
+    <string name="search_layout_vertical">普通</string>
     <string name="search_exact">精準搜尋</string>
     <string name="search_sites">搜尋站點</string>
     <string name="search_sites_none_hint">未選擇站點，將搜尋不到結果</string>

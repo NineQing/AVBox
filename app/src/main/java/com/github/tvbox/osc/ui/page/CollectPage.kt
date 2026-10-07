@@ -99,7 +99,6 @@ class CollectViewModel(
     val placementAnim = MutableStateFlow(false)
 
     fun refresh(scrollToTop: Boolean = false) {
-        if (items.value.isEmpty()) loading.value = true
         if (scrollToTop) placementAnim.value = false
         viewModelScope.launch(Dispatchers.IO) {
             items.value = collect.getAllVodCollect()

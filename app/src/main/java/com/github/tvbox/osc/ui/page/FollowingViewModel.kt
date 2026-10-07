@@ -61,7 +61,6 @@ internal class FollowingViewModel(
     }
 
     fun refresh() {
-        if (items.value.isEmpty()) loading.value = true
         today.value = FollowDays.todayIndex()
         viewModelScope.launch(Dispatchers.IO) {
             val list = follows.getAll()

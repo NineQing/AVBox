@@ -89,6 +89,7 @@ import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.ui.CastSheet
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
+import com.github.tvbox.osc.ui.components.ImagePalette
 import com.github.tvbox.osc.ui.components.LocalTopBarGlassBackdrop
 import com.github.tvbox.osc.ui.components.ScallopShape
 import com.github.tvbox.osc.ui.components.TopBarActionBox
@@ -513,7 +514,7 @@ private fun MusicCover(artwork: String, side: Dp, onSeed: (Int?) -> Unit) {
                 onSuccess = { result ->
                     val image = result.result.image
                     scope.launch {
-                        val argb = withContext(Dispatchers.Default) { MusicPalette.seedOf(image) }
+                        val argb = withContext(Dispatchers.Default) { ImagePalette.seedOf(image) }
                         onSeed(argb)
                     }
                 },

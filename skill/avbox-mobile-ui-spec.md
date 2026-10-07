@@ -195,7 +195,7 @@
   - **竖排(默认)** = `RailResults`,左侧 140dp 站点栏(`SearchRailWidth`)+ 右侧结果列表;横排 = `SearchListResults`,各源分区 + 横向卡片行。
   - **左侧站点栏只列「有结果的源」(2026-10-07 改为与 fongmi 一致)**:取数 = `ui/activity/SearchHits.kt` 的 `SearchHits.sources()`(先滤掉 `videos` 为空的源、再按 `arrivedAt` 到达顺序);栏内恒为「全部」+ 命中源,**不再**预占参搜源、**不再**有 Pending 转圈 —— 求解中的唯一指示 = 右侧列表顶部那条波浪线;没搜到的源不进栏(因此栏序是"新源只往后加、已有项不跳位)。横排的 `done` 走同一函数(源集合与顺序都一致,横排分区由"配置顺序"变为"到达顺序"),与本节首段「「全部」+ 所有有结果的源」口径统一。对照实现 = fongmi 移动端 `CollectFragment.setCollect`(`result.getList().isEmpty() ⇒ return`,再由 `Collect.create` 追加;`Collect.all()` 恒为第 0 项)与 TV 端 `CollectActivity` 同款判据。代价 = 左栏不再反映"哪些源还在搜 / 已挂",全空时的空态文案由 `SearchResultsContent` 兜底(fongmi 那侧只剩「全部」+ 空白列表)。
   - 切换入口 = 搜索框 `trailing` 槽位那颗 ⋮(`LayoutSwitchAction` → `DropdownMenu`,`SearchScreens.kt`);取值/落库 = `net/SearchSettings.kt` 的 `resultLayout()` / `setResultLayout()`,KV 键 `search_result_layout`(未登记 `KVKeySpec`,**读取必须带默认值**)。
-  - ⚠️ **默认值方向与首页相反,别"顺手统一"**:搜索页默认**竖排** ⇒ 判据写成"显式 `horizontal` 才横排,其余(含键不存在)一律竖排";首页 `home_layout` 也是默认竖排,两个键各管各的、互不影响。改默认值会让"从未切过"的用户跟着变(显式选过的用户保持自己的选择)—— 2026-09-21 就是这么从横排改成竖排的。
+  - ⚠️ **默认值方向与首页相反,别"顺手统一"**:搜索页默认**竖排** ⇒ 判据写成"显式 `horizontal` 才横排,其余(含键不存在)一律竖排";首页 `home_layout` 自 **2026-10-08 起默认 `Horizontal`(沉浸)**,两个键各管各的、互不影响。改默认值会让"从未切过"的用户跟着变(显式选过的用户保持自己的选择)—— 2026-09-21 就是这么从横排改成竖排的,2026-10-08 首页又反向改回横排。同一日起分段标签由"横向展示 / 竖向展示"改为**「沉浸 / 普通」**(`search_layout_horizontal` / `search_layout_vertical`,四语同改;key 名仍按横/竖命名,不跟着标签改)。
   - 切换展示方式时 `LaunchedEffect(resultLayout)` 会把结果源筛选重置为「全部」。
 
 ### 4.7 配置管理页(2026-09-11 定稿,五轮迭代;2026-09-12 起点播/直播分段;过程见 `history/features.md`)
@@ -300,7 +300,7 @@
 - **不要给栅格加 `widthIn(max = …)` 限宽居中**:栅格一旦被压窄居中,就会与**不在栅格里的兄弟元素**(分类 tab 行、顶栏)错开 —— 真机实测差 **41dp**,是用户先发现的。要对齐就对齐容器,别对齐文字(见 §6.10)。
 - **不要用 `GridCells.Adaptive`**:它会"尽量多塞",卡宽不可控。
 
-**与用户开关正交,不覆盖**:`util/HomeSettings.kt` 的 `home_layout`(`Vertical` 栅格 / `Horizontal` 列表 + HeroCarousel)仍是**选择**;窗口分档只决定列数与导航形态,不覆盖选择,也不因窗口变化回写 KV。
+**与用户开关正交,不覆盖**:`util/HomeSettings.kt` 的 `home_layout`(`Vertical` 栅格 / `Horizontal` 列表 + HeroCarousel,**键缺失时默认 `Horizontal`**)仍是**选择**;窗口分档只决定列数与导航形态,不覆盖选择,也不因窗口变化回写 KV。
 
 **本次范围(2026-09-21 定)**:① 手机(sw<600dp)**继续锁竖屏**,不放开手机横屏;② 大屏做「栅格自适应 + 内容限宽 + 侧边 Rail(含液态玻璃轴向改造)」;③ **不做**列表-详情双栏(留待后续,届时优先 `ActivityEmbedding`,而非引入 §2 已排除的 navigation-compose)。
 
@@ -504,6 +504,7 @@
 
 - ⚠️ **`by viewModels()` 不能被"绑定属性引用"触发**。`var x by vm::x` 会在 **Activity 构造期**求值 `vm`,`by viewModels()` 的懒加载随即调 `getViewModelStore()`,而那时 Activity 尚未 attach,`ComponentActivity` 直接抛 `IllegalStateException("Your activity is not yet attached to the Application instance…")` ⇒ **进页面即崩**。要让宿主转发 VM 状态,必须用**非绑定**属性引用 + 自定义委托(样板 `LivePlayActivity.VmVar`/`VmVal`),取值推迟到 `getValue`/`setValue`。
 - ⚠️ **抽离出的类若自带 `Handler`(或线程),宿主销毁时必须显式取消**。宿主 `onDestroy` 里清自己的队列(`removeCallbacksAndMessages`)带不走它们的延迟任务 ⇒ 销毁后仍会回调到已销毁的界面(直播页:延迟 1.2s 的 EPG 取数 / 代理源加载)。样板:两个类各留 `cancelAll()` 并在 `onDestroy` 调用。
+- ⚠️ **沉浸式首页的模糊底只能有一层,且必须带"蒙层下限"(2026-10-08 实施)**。构成 = `ui/components/HomeHeroBackdrop.kt`:当前停稳页海报的同图(`VodPoster(preferLarge = true)`)+ `graphicsLayer` 1.3× 放大(防模糊边缘透明化露出底色边)+ `blur(40dp)` + 取色蒙层曲线(与 `HeroSpotlightFadeStops` 同源、外加 `HOME_HERO_BACKDROP_MIN_SCRIM = 0.6` 下限与 Hero 下方回落段),随停稳页 200ms 交叉淡入(`Crossfade`)。三条硬约束:①**API 31+ 才能用** —— `Modifier.blur` 低版本是 no-op,会露出"没模糊的放大图",故由 `homeHeroBackdropSupported` 门控、低版本退回原纯色底,**别去掉门控**;②**Hero 的渐隐不另起一层** —— 用 `CompositingStrategy.Offscreen` + `BlendMode.DstIn` 按同一曲线把海报自身淡出、露出下层(页面级唯一那层模糊),再叠第二层全屏 `blur` 是纯浪费;③**蒙层下限不能撤** —— 上限给足(标题/评分那段接近 1.0)才保得住图上文字(浅色主题 + 深色海报时,下限一撤区块标题与空态文字先掉对比度),上限之下的"回落段"才是模糊露出来的地方。
 - ⚠️ **"Composable 只在首次组合读一次 KV" + "写 KV 发生在异步加载里" = 页面不刷新**。凡是**可见性/选中态/摘要文案**依赖异步改写后的 KV(多仓的仓地址 → 仓内首条子源改写、配置拉取后才成立的标记)的页面,都必须显式补刷新通道,否则只能靠"退出重进"(重建 Activity/ComposeView,`remember` 重跑)才正确。**刷新信号必须由"改写点"直接发**(本项目 = `util/ApiLineSignal`),不要反推"加载什么时候完成" —— `AppBootstrap` 的 `Ready` 是**配置加载 + jar 装载**两段都跑完才发的,而改写只发生在第一段里,拿它当触发器会晚到用户以为没生效(`Boot.Error` 时更是永远不触发;这条是实际踩过的返工)。**同一页内只保留一条刷新路径**:能精确到"改写那一刻"的用信号;若该页的跨页改写都能靠"回本页"覆盖,则用 `LifecycleEventEffect(ON_RESUME)` 这一条即可 —— 两条都挂属于重复。刷新**只重读"当前态"快照,不要重读用户可编辑的列表** —— 列表的增删改都同步写 KV,重读不会带来新信息,反而会与本地管理态(如 `manageMode` 的勾选集)错位。已落地:配置管理页「换仓」入口(§4.7)。
 
 ### 6.10 自适应与窗口分档(2026-09-21 补,均由实坑/实测得出)
@@ -646,10 +647,11 @@
 
 ### 6.20 tab 页生命周期与状态收集(2026-10-03)
 
-- **机制**:`MainScreen` 给 pager 每个 page 用官方 `rememberLifecycleOwner(maxLifecycle = 活跃页 RESUMED / 其余 STARTED)` 提供页面级 `LocalLifecycleOwner`(非当前页只到 STARTED;宿主进 CREATED 时全部页面随之下沉)。❗**别再手写 LifecycleOwner / 状态阶梯**:lifecycle 2.11 的 `LifecycleRegistry` 对 `INITIALIZED→DESTROYED` 与"从 DESTROYED 往上"直接抛异常,官方 helper 已含该守卫与 OEM 兼容(手写状态阶梯正是踩这条)。
+- **机制**:`MainScreen` 给 pager 每个 page 用官方 `rememberLifecycleOwner(maxLifecycle = 活跃页 RESUMED / 其余 STARTED)` 提供页面级 `LocalLifecycleOwner`(非当前页只到 STARTED;宿主进 CREATED 时全部页面随之下沉)。**「活跃页」的判据是 `pagerState.targetPage`,不是 `currentPage`(2026-10-08 真机 bug 修正)**:`currentPage` 在跨多页滚动时会依次经过中间页 ⇒ 经过页被短暂置为 RESUMED、其 `LifecycleEventEffect(ON_RESUME)` 被误触发(现象:首页点 tab 到「我的」,动画路过「追剧」时闪一下全屏加载指示器)。⚠️ 这条与 §4.11 的 tab 选择态同源,别再写回 `currentPage`。❗**别再手写 LifecycleOwner / 状态阶梯**:lifecycle 2.11 的 `LifecycleRegistry` 对 `INITIALIZED→DESTROYED` 与"从 DESTROYED 往上"直接抛异常,官方 helper 已含该守卫与 OEM 兼容(手写状态阶梯正是踩这条)。
 - ⚠️ **tab 页内的 flow 收集一律 `collectAsStateWithLifecycle`**(含随页组合的子组件,如 `SearchSettingsSheet`):用 `collectAsState` 会在宿主退后台后继续收集并重组。想让"离屏就不收集"必须显式传 `minActiveState = RESUMED` —— 默认 STARTED 仍会收集。
 - ⚠️ **给 tab 页传参必须是稳定实例**(ViewModel 实例、`remember` 住的 `PaddingValues`/lambda):pager 的 item lambda 会读 `pagerState.currentPage`,参数不稳定会让整页重组随每次切页放大。
 - ⚠️ **页面级 owner 只影响生命周期感知 API**:离屏页的 `LaunchedEffect` 与 hot flow 收集器不会被停掉(首页加载失败提示会弹在别的 tab 上,既有行为,见 history 归档);要按页门控就显式用 RESUMED。
+- ⚠️ **列表页的全屏加载指示器只在「首次加载」出现(2026-10-08)**:`FollowingViewModel` / `HistoryViewModel` / `CollectViewModel` 的 `loading` 仅由初值 `true` 与首次加载完成置位,**刷新一律静默**;原先"列表为空就回到 loading 态"的判据已删 —— 它让空列表每次被刷新都先闪一次 64dp `ContainedLoadingIndicator`(与上一条的经过页 RESUMED 叠加就是 2026-10-08 那个闪烁)。新增列表页照此口径。
 
 ## 7. 未决 / 待细化清单
 

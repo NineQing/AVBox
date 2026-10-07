@@ -238,6 +238,11 @@ class DetailViewModel : ViewModel() {
     }
 
     fun onPlayRequested() {
+        val list = vodInfo?.seriesMap?.get(vodInfo?.playFlag)
+        if (list.isNullOrEmpty()) {
+            toastEvent.value = str(R.string.detail_no_playable_content)
+            return
+        }
         fullScreen.value = true
         rotating.value = false
         portraitResolved.value = false

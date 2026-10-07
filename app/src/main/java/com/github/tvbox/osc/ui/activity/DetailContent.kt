@@ -1,11 +1,5 @@
 package com.github.tvbox.osc.ui.activity
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -83,7 +76,19 @@ internal fun DetailContent(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
     ) {
-        if (!playing) {
+        if (playing) {
+            item(key = "actions") {
+                DetailActionRow(
+                    collected = collected,
+                    followed = followRecord != null,
+                    onMusic = { activity.openMusicPlayer() },
+                    onCast = { activity.openCast() },
+                    onCollect = { vm.toggleCollect() },
+                    onFollow = { followScheduleOpen = true },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                )
+            }
+        } else {
             item(key = "hero") {
                 DetailHero(
                     title = info.name ?: "TVBox",
@@ -92,10 +97,15 @@ internal fun DetailContent(
                     area = info.area,
                     type = info.type,
                     collected = collected,
+                    followed = followRecord != null,
                     backdropColor = backdropColor,
                     onBackdropSeed = onBackdropSeed,
                     onBack = { activity.onBackPressedDispatcher.onBackPressed() },
+                    onPlay = { vm.onPlayRequested() },
+                    onMusic = { activity.openMusicPlayer() },
+                    onCast = { activity.openCast() },
                     onCollect = { vm.toggleCollect() },
+                    onFollow = { followScheduleOpen = true },
                 )
             }
         }
@@ -108,66 +118,14 @@ internal fun DetailContent(
                     .background(MaterialTheme.colorScheme.surfaceBright, RoundedCornerShape(16.dp))
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Text(
+                    text = info.name ?: "TVBox",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = info.name ?: "TVBox",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = { activity.openMusicPlayer() }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_detail_music_player),
-                            contentDescription = stringResource(R.string.detail_music_player),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    IconButton(onClick = { activity.openCast() }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_detail_cast),
-                            contentDescription = stringResource(R.string.common_cast),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                    IconButton(onClick = { vm.toggleCollect() }) {
-                        AnimatedContent(
-                            targetState = collected,
-                            transitionSpec = {
-                                (scaleIn(initialScale = 0.6f) + fadeIn()) togetherWith
-                                        (scaleOut(targetScale = 0.6f) + fadeOut())
-                            },
-                            label = "collectIcon",
-                        ) { isCollected ->
-                            Icon(
-                                painter = painterResource(
-                                    if (isCollected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect
-                                ),
-                                contentDescription = stringResource(if (isCollected) R.string.detail_uncollect else R.string.detail_collect),
-                                tint = if (isCollected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp),
-                            )
-                        }
-                    }
-                    IconButton(onClick = { followScheduleOpen = true }) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_tab_following),
-                            contentDescription = stringResource(R.string.tab_following),
-                            tint = if (followRecord != null) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
+                )
                 val metaParts = listOfNotNull(
                     if (info.year > 0) info.year.toString() else null,
                     info.area?.takeIf { it.isNotBlank() },

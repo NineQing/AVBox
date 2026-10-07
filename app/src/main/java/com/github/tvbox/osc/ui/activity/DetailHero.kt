@@ -1,6 +1,8 @@
 package com.github.tvbox.osc.ui.activity
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,8 +13,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,10 +29,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -35,20 +46,40 @@ import com.github.tvbox.osc.ui.components.HomeBackdrop
 import com.github.tvbox.osc.ui.components.ImagePalette
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.VodPoster
-import com.github.tvbox.osc.ui.components.heroSpotlightHeight
+import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val DetailTopScrimAlpha = 0.32f
 
+private const val HERO_HEIGHT_RATIO = 0.70f
+
 private val DetailTopScrimExtra = 24.dp
+
+private val HeroMinHeight = 480.dp
+
+private val HeroMaxHeight = 660.dp
 
 private val HeroCaptionHorizontalPadding = 24.dp
 
-private val HeroCaptionBottomPadding = 32.dp
+private val HeroCaptionBottomPadding = 28.dp
 
 private val HeroCaptionSpacing = 6.dp
+
+private val HeroPlayCapsuleHeight = 52.dp
+
+private val HeroPlayCapsuleMinWidth = 180.dp
+
+private val HeroPlayCapsuleHorizontalPadding = 32.dp
+
+private val HeroCircleButtonSize = 52.dp
+
+private val HeroCircleButtonSpacing = 16.dp
+
+private val HeroActionSpacing = 20.dp
+
+private val HeroButtonRowSpacing = 16.dp
 
 private val MetaSeparator = " · "
 
@@ -78,10 +109,15 @@ internal fun DetailHero(
     area: String?,
     type: String?,
     collected: Boolean,
+    followed: Boolean,
     backdropColor: Color,
     onBackdropSeed: (Int?) -> Unit,
     onBack: () -> Unit,
+    onPlay: () -> Unit,
+    onMusic: () -> Unit,
+    onCast: () -> Unit,
     onCollect: () -> Unit,
+    onFollow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -91,7 +127,11 @@ internal fun DetailHero(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(heroSpotlightHeight(LocalConfiguration.current.screenHeightDp)),
+            .height(
+                (LocalConfiguration.current.screenHeightDp * HERO_HEIGHT_RATIO)
+                    .dp
+                    .coerceIn(HeroMinHeight, HeroMaxHeight),
+            ),
     ) {
         VodPoster(
             name = title,
@@ -182,7 +222,110 @@ internal fun DetailHero(
             if (types.isNotEmpty()) {
                 DetailHeroMetaLine(types)
             }
+            Box(
+                modifier = Modifier
+                    .padding(top = HeroActionSpacing)
+                    .widthIn(min = HeroPlayCapsuleMinWidth)
+                    .height(HeroPlayCapsuleHeight)
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .clickable(onClick = onPlay)
+                    .padding(horizontal = HeroPlayCapsuleHorizontalPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                    Text(
+                        text = stringResource(R.string.common_play),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
+            }
+            DetailActionRow(
+                collected = collected,
+                followed = followed,
+                onMusic = onMusic,
+                onCast = onCast,
+                onCollect = onCollect,
+                onFollow = onFollow,
+                modifier = Modifier.padding(top = HeroButtonRowSpacing),
+            )
         }
+    }
+}
+
+@Composable
+internal fun DetailActionRow(
+    collected: Boolean,
+    followed: Boolean,
+    onMusic: () -> Unit,
+    onCast: () -> Unit,
+    onCollect: () -> Unit,
+    onFollow: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(HeroCircleButtonSpacing),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HeroCircleButton(
+            iconRes = R.drawable.ic_detail_music_player,
+            contentDescription = stringResource(R.string.detail_music_player),
+            selected = false,
+            onClick = onMusic,
+        )
+        HeroCircleButton(
+            iconRes = R.drawable.ic_detail_cast,
+            contentDescription = stringResource(R.string.common_cast),
+            selected = false,
+            onClick = onCast,
+        )
+        HeroCircleButton(
+            iconRes = if (collected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect,
+            contentDescription = stringResource(
+                if (collected) R.string.detail_uncollect else R.string.detail_collect,
+            ),
+            selected = collected,
+            onClick = onCollect,
+        )
+        HeroCircleButton(
+            iconRes = R.drawable.ic_tab_following,
+            contentDescription = stringResource(R.string.tab_following),
+            selected = followed,
+            onClick = onFollow,
+        )
+    }
+}
+
+@Composable
+private fun HeroCircleButton(
+    iconRes: Int,
+    contentDescription: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(HeroCircleButtonSize)
+            .glassTopBarSurface(CircleShape, MaterialTheme.colorScheme.surfaceBright)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(24.dp),
+        )
     }
 }
 

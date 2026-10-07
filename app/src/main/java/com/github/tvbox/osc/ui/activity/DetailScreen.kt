@@ -4,7 +4,10 @@ package com.github.tvbox.osc.ui.activity
 
 import android.content.res.Configuration
 import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,9 +44,11 @@ import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.player.ui.playerDim
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
+import com.github.tvbox.osc.ui.components.HomeBackdrop
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.player.PlayContainer
+import com.github.tvbox.osc.ui.theme.AppThemeState
 import kotlinx.coroutines.delay
 import com.github.tvbox.osc.ui.page.jumpToSearch
 
@@ -71,6 +76,16 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
         .coerceAtMost(maxOf(150.dp, longEdge / 2))
 
     var container by remember { mutableStateOf<PlayContainer?>(null) }
+    var backdropSeed by remember { mutableStateOf<Int?>(null) }
+    val darkTheme = AppThemeState.isDark(isSystemInDarkTheme())
+    val pageBackdrop by animateColorAsState(
+        targetValue = backdropSeed
+            ?.takeIf { !playing }
+            ?.let { Color(HomeBackdrop.surfaceOf(it, darkTheme)) }
+            ?: MaterialTheme.colorScheme.surfaceContainer,
+        animationSpec = tween(200),
+        label = "detailBackdrop",
+    )
 
     LaunchedEffect(playing, playSignal) {
         if (container == null && (playing || playSignal > 0)) container = activity.ensurePlayContainer()
@@ -129,83 +144,85 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainer),
+            .background(pageBackdrop),
     ) {
-        Box(
-            modifier = if (fullBox) {
-                Modifier.fillMaxSize().background(Color.Black)
-            } else {
-                Modifier.fillMaxWidth()
-                    .background(Color.Black)
-                    .statusBarsPadding()
-                    .height(previewBoxHeight)
-                    .background(Color.Black)
-            },
-        ) {
-            val playerContainer = container
-            if (playerContainer != null) {
-                AndroidView(
-                    factory = { playerContainer },
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            if (pageState is DetailViewModel.PageState.Loading && !fullBox) {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(Color.Black),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ContainedLoadingIndicator(
-                        containerColor = Color.White.copy(alpha = 0.2f),
-                        indicatorColor = Color.White.copy(alpha = 0.75f),
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = when {
+                    fullBox -> Modifier.fillMaxSize().background(Color.Black)
+                    playing -> Modifier.fillMaxWidth()
+                        .background(Color.Black)
+                        .statusBarsPadding()
+                        .height(previewBoxHeight)
+                        .background(Color.Black)
+                    else -> Modifier.fillMaxWidth().height(0.dp)
+                },
+            ) {
+                val playerContainer = container
+                if (playerContainer != null) {
+                    AndroidView(
+                        factory = { playerContainer },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                if (!fullBox && playing && pageState is DetailViewModel.PageState.Ready) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_player_expand),
+                        contentDescription = stringResource(R.string.detail_fullscreen_play),
+                        tint = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(
+                                end = 16.dp,
+                                bottom = (16.dp + playerDim(R.dimen.vs_30) / 2 - 20.dp).coerceAtLeast(0.dp),
+                            )
+                            .size(40.dp)
+                            .clickable { vm.onFullScreenToggleRequested(true, activity.playbackFacts()) }
+                            .padding(9.dp),
                     )
                 }
             }
-            if (!fullBox && playing && pageState is DetailViewModel.PageState.Ready) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_player_expand),
-                    contentDescription = stringResource(R.string.detail_fullscreen_play),
-                    tint = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(
-                            end = 16.dp,
-                            bottom = (16.dp + playerDim(R.dimen.vs_30) / 2 - 20.dp).coerceAtLeast(0.dp),
+
+            if (!fullBox) {
+                when (val state = pageState) {
+                    is DetailViewModel.PageState.Loading -> {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            ContainedLoadingIndicator()
+                        }
+                    }
+
+                    is DetailViewModel.PageState.Empty -> {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            LoadStateBox(
+                                state = LoadState.Empty,
+                                emptyText = state.msg ?: stringResource(R.string.detail_empty_source),
+                                errorText = "",
+                                retryText = "",
+                                modifier = Modifier.weight(1f),
+                            )
+                            SourceSection(vm, currentSourceName = null, revision = revision)
+                        }
+                    }
+
+                    is DetailViewModel.PageState.Ready -> {
+                        DetailContent(
+                            activity = activity,
+                            vm = vm,
+                            revision = revision,
+                            playing = playing,
+                            backdropColor = pageBackdrop,
+                            onBackdropSeed = { backdropSeed = it },
+                            onCardLongClick = { vodMenu.show(it) },
                         )
-                        .size(40.dp)
-                        .clickable { vm.onFullScreenToggleRequested(true, activity.playbackFacts()) }
-                        .padding(9.dp),
-                )
+                    }
+                }
             }
         }
-
         if (!fullBox) {
-            when (val state = pageState) {
-                is DetailViewModel.PageState.Loading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        ContainedLoadingIndicator()
-                    }
-                }
-
-                is DetailViewModel.PageState.Empty -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        LoadStateBox(
-                            state = LoadState.Empty,
-                            emptyText = state.msg ?: stringResource(R.string.detail_empty_source),
-                            errorText = "",
-                            retryText = "",
-                            modifier = Modifier.weight(1f),
-                        )
-                        SourceSection(vm, currentSourceName = null, revision = revision)
-                    }
-                }
-
-                is DetailViewModel.PageState.Ready -> {
-                    DetailContent(activity, vm, revision, onCardLongClick = { vodMenu.show(it) })
-                }
-            }
+            DetailTopScrim(modifier = Modifier.align(Alignment.TopCenter))
         }
     }
 

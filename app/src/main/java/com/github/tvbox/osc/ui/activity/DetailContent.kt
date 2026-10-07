@@ -40,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +57,9 @@ internal fun DetailContent(
     activity: DetailActivity,
     vm: DetailViewModel,
     revision: Int,
+    playing: Boolean,
+    backdropColor: Color,
+    onBackdropSeed: (Int?) -> Unit,
     onCardLongClick: (Movie.Video) -> Unit,
 ) {
     val info = vm.vodInfo ?: return
@@ -79,6 +83,23 @@ internal fun DetailContent(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
     ) {
+        if (!playing) {
+            item(key = "hero") {
+                DetailHero(
+                    title = info.name ?: "TVBox",
+                    picture = info.pic,
+                    year = info.year,
+                    area = info.area,
+                    type = info.type,
+                    collected = collected,
+                    backdropColor = backdropColor,
+                    onBackdropSeed = onBackdropSeed,
+                    onBack = { activity.onBackPressedDispatcher.onBackPressed() },
+                    onCollect = { vm.toggleCollect() },
+                )
+            }
+        }
+
         item(key = "header") {
             val desc = remember(info.des) { removeHtmlTag(info.des) }
             Column(

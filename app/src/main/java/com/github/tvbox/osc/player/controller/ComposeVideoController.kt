@@ -304,7 +304,10 @@ class ComposeVideoController @JvmOverloads constructor(
 
     override fun onVideoSizeChanged(width: Int, height: Int) {
         state.videoSize = videoSizeGate.textFor(width, height)
+        onVideoSizeReady?.invoke(width, height)
     }
+
+    internal var onVideoSizeReady: ((Int, Int) -> Unit)? = null
 
     override fun onVideoSizeCleared() {
         videoSizeGate.onKernelContentReplaced()

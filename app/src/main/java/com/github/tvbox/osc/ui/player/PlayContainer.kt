@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
+import android.os.Looper
 import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -28,6 +29,7 @@ import com.github.tvbox.osc.player.PlaybackViewBridge
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.PreloadCoordinator
 import com.github.tvbox.osc.player.TrackInfoBean
+import com.github.tvbox.osc.player.VideoOrientation
 import com.github.tvbox.osc.player.controller.ComposeVideoController
 import com.github.tvbox.osc.player.controller.PlayerControlApi
 import com.github.tvbox.osc.player.danmu.DanmuLoadController
@@ -73,6 +75,8 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     private val subtitles: PlayContainerSubtitles = PlayContainerSubtitles(this)
 
     private var qualitySelectedListener: OnQualitySelectedListener? = null
+
+    private var videoSizeReadyListener: ((Boolean) -> Unit)? = null
 
     private var lifecyclePaused: Boolean = false
     private var ownedPlaybackKey: String? = null
@@ -135,6 +139,19 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         qualitySelectedListener = listener
     }
 
+    fun setVideoSizeReadyListener(listener: ((Boolean) -> Unit)?) {
+        videoSizeReadyListener = listener
+    }
+
+    private fun notifyVideoSizeReady(portraitVideo: Boolean) {
+        val deliver = Runnable {
+            val listener = videoSizeReadyListener
+            videoSizeReadyListener = null
+            listener?.invoke(portraitVideo)
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) deliver.run() else post(deliver)
+    }
+
     override fun hostResume() {
         mExitingPreview = false
         if (mController != null) mController.setLifecyclePaused(false)
@@ -191,6 +208,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         LOG.i("echo-music destroy: hostDestroy enter")
         PlayerTipBridge.clearTipStateListener(tipStateListener)
         qualitySelectedListener = null
+        videoSizeReadyListener = null
         if (engine != null && !handedOver) engine!!.detach(this)
         overlays.cancelPreloadToast()
         if (EventBus.getDefault().isRegistered(this)) {
@@ -256,6 +274,9 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         }
         surfaceSlot = findViewById(R.id.surfaceSlot)
         mController = ComposeVideoController(mActivity!!)
+        (mController as? ComposeVideoController)?.onVideoSizeReady = { width, height ->
+            notifyVideoSizeReady(VideoOrientation.isPortrait(width, height))
+        }
 
         mController.getLyricView().setTextSize(if (previewMode) 16f else 24f)
         mController.setCanChangePosition(true)
@@ -271,13 +292,19 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     }
 
     fun showCastDialog() {
-        if (TextUtils.isEmpty(scheduler.webPlayUrl())) {
+        val webUrl = scheduler.webPlayUrl()
+        if (TextUtils.isEmpty(webUrl)) {
             Toast.makeText(mContext, mContext.getString(R.string.toast_no_cast_url), Toast.LENGTH_SHORT).show()
             return
         }
         if (!isAttached()) return
+        val castUrl = scheduler.getCastUrl(webUrl)
+        if (castUrl.isNullOrEmpty()) {
+            Toast.makeText(mContext, mContext.getString(R.string.toast_no_cast_url), Toast.LENGTH_SHORT).show()
+            return
+        }
         val headers: HashMap<String, String>? = scheduler.webHeaderMap()?.let { HashMap(it) }
-        val video = CastVideo(scheduler.getCastUrl(scheduler.webPlayUrl())!!, getCastTitle(), headers, getCastPosition())
+        val video = CastVideo(castUrl, getCastTitle(), headers, getCastPosition())
         val uiState = mController.getUiState()
         uiState.castSheet = CastSheetState(video) {
             if (mVideoView != null) mVideoView!!.pause()
@@ -411,6 +438,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
             return
         }
         val sameVodSwitch = isSameVodEpisodeSwitch(session)
+        mVideoView?.forgetVideoSize()
         engine!!.setData(session)
         syncSessionVod()
         mController.setPlayerConfig(scheduler.playerCfg()!!)
@@ -492,6 +520,13 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     fun isPortraitVideo(): Boolean {
         return mVideoView != null && mVideoView!!.isPortraitVideo()
     }
+
+    fun hasVideoSize(): Boolean {
+        val size = mVideoView?.videoSize ?: return false
+        return size.size >= 2 && size[0] > 0 && size[1] > 0
+    }
+
+    fun hasCastUrl(): Boolean = !TextUtils.isEmpty(scheduler.webPlayUrl())
 
     override fun setExitingPreview(exitingPreview: Boolean) {
         mExitingPreview = exitingPreview

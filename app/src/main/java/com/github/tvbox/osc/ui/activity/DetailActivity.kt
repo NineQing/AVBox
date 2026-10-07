@@ -26,11 +26,15 @@ import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.ui.player.PlayContainer
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.AppThemeState
+import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PermissionHelper
 import kotlinx.coroutines.launch
 
 private const val SYSBAR_APPEARANCE_REASSERT_DELAY_MS = 400L
+private const val VIDEO_SIZE_WATCH_TIMEOUT_MS = 1500L
+private const val CAST_URL_POLL_MS = 250L
+private const val CAST_URL_WAIT_ATTEMPTS = 20
 
 class DetailActivity : BaseActivity(), PageHost {
 
@@ -42,6 +46,26 @@ class DetailActivity : BaseActivity(), PageHost {
         private set
     private var fullScreen = false
     private var pendingEpisodeSync = false
+    private var videoSizeWatchArmed = false
+    private var castWaitAttempts = 0
+
+    private val videoSizeTimeoutRunnable = Runnable {
+        if (!videoSizeWatchArmed) return@Runnable
+        LOG.i("echo-player detail size timeout, fall back to landscape")
+        onVideoSizeReady(portraitVideo = false)
+    }
+
+    private val castWaitRunnable = object : Runnable {
+        override fun run() {
+            val container = playContainer ?: return
+            if (container.hasCastUrl() || castWaitAttempts >= CAST_URL_WAIT_ATTEMPTS) {
+                container.showCast()
+                return
+            }
+            castWaitAttempts += 1
+            window.decorView.postDelayed(this, CAST_URL_POLL_MS)
+        }
+    }
 
     private val localSubtitlePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -115,6 +139,7 @@ class DetailActivity : BaseActivity(), PageHost {
             playContainer = PlayContainer(this).also {
                 it.setPageHost(this)
                 it.setPreviewMode(true)
+                it.setOnQualitySelectedListener(vm::onQualitySelectionAccepted)
             }
         }
         return playContainer!!
@@ -153,13 +178,31 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     fun playCurrent() {
-        val container = playContainer ?: return
+        val container = ensurePlayContainer()
         val session = vm.preparePlaySession()
         if (session == null) {
             container.clearSourceSwitchTip()
             return
         }
         container.setData(session)
+        vm.playing.value = true
+    }
+
+    fun ensurePlaying(): PlayContainer {
+        val container = ensurePlayContainer()
+        if (PlaybackService.peek()?.controller()?.vod() == null) playCurrent()
+        return container
+    }
+
+    fun openCast() {
+        val container = ensurePlaying()
+        castWaitAttempts = 0
+        window.decorView.removeCallbacks(castWaitRunnable)
+        if (container.hasCastUrl()) {
+            container.showCast()
+        } else {
+            window.decorView.postDelayed(castWaitRunnable, CAST_URL_POLL_MS)
+        }
     }
 
     fun musicPlaybackDetected(): Boolean {
@@ -190,7 +233,7 @@ class DetailActivity : BaseActivity(), PageHost {
             Toast.makeText(this, getString(R.string.detail_content_not_ready), Toast.LENGTH_SHORT).show()
             return
         }
-        if (PlaybackService.peek()?.controller()?.vod() == null) playCurrent()
+        ensurePlaying()
         if (!handOffToMusicPlayer()) {
             Toast.makeText(this, getString(R.string.detail_no_playable_content), Toast.LENGTH_SHORT).show()
         }
@@ -224,15 +267,16 @@ class DetailActivity : BaseActivity(), PageHost {
         if (fullScreen == full) return
         fullScreen = full
         requestedOrientation = if (full) {
-            if (playContainer?.isPortraitVideo() == true) {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            } else {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            val container = ensurePlayContainer()
+            when (DetailPlaybackOrientation.target(container.hasVideoSize(), container.isPortraitVideo())) {
+                DetailPlaybackOrientation.Target.Portrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                DetailPlaybackOrientation.Target.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             }
         } else {
             orientationPolicyValue()
         }
         if (full) {
+            armVideoSizeWatch()
             hideSysBar()
         } else {
             val controller = WindowCompat.getInsetsController(window, window.decorView)
@@ -243,6 +287,32 @@ class DetailActivity : BaseActivity(), PageHost {
             }, SYSBAR_APPEARANCE_REASSERT_DELAY_MS)
         }
         syncFullBoxSideEffects()
+    }
+
+    fun applyPlaybackOrientation(portraitVideo: Boolean) {
+        if (!fullScreen) return
+        requestedOrientation = if (portraitVideo) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
+
+    private fun armVideoSizeWatch() {
+        val container = playContainer ?: return
+        if (container.hasVideoSize()) return
+        videoSizeWatchArmed = true
+        container.setVideoSizeReadyListener { portraitVideo -> onVideoSizeReady(portraitVideo) }
+        window.decorView.postDelayed(videoSizeTimeoutRunnable, VIDEO_SIZE_WATCH_TIMEOUT_MS)
+    }
+
+    private fun onVideoSizeReady(portraitVideo: Boolean) {
+        if (!videoSizeWatchArmed) return
+        videoSizeWatchArmed = false
+        window.decorView.removeCallbacks(videoSizeTimeoutRunnable)
+        playContainer?.setVideoSizeReadyListener(null)
+        vm.onVideoSizeResolved(portraitVideo)
+        applyPlaybackOrientation(portraitVideo)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -279,6 +349,8 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     override fun onDestroy() {
+        window.decorView.removeCallbacks(videoSizeTimeoutRunnable)
+        window.decorView.removeCallbacks(castWaitRunnable)
         releasePlayContainer()
         vm.destroyEngine()
         super.onDestroy()

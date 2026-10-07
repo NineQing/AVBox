@@ -43,6 +43,7 @@ import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
+import com.github.tvbox.osc.ui.player.PlayContainer
 import kotlinx.coroutines.delay
 import com.github.tvbox.osc.ui.page.jumpToSearch
 
@@ -55,6 +56,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
     val rotating by vm.rotating.collectAsState()
     val revision by vm.revision.collectAsState()
     val playSignal by vm.playSignal.collectAsState()
+    val playing by vm.playing.collectAsState()
     val toast by vm.toastEvent.collectAsState()
     val finish by vm.finishEvent.collectAsState()
     val vodMenu = rememberVodCardMenuState()
@@ -68,21 +70,26 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
         .coerceAtLeast(150.dp)
         .coerceAtMost(maxOf(150.dp, longEdge / 2))
 
-    val container = remember { activity.ensurePlayContainer().also { it.setOnQualitySelectedListener(vm::onQualitySelectionAccepted) } }
+    var container by remember { mutableStateOf<PlayContainer?>(null) }
 
-    LaunchedEffect(container, vm) {
+    LaunchedEffect(playing, playSignal) {
+        if (container == null && (playing || playSignal > 0)) container = activity.ensurePlayContainer()
+    }
+
+    LaunchedEffect(vm) {
         vm.playbackCommands.collect { command ->
+            val c = activity.playContainer ?: return@collect
             when (command) {
-                is PlaybackCommand.StopForContentSwitch -> container.stopForContentSwitch()
-                is PlaybackCommand.StopForSourceSwitch -> container.stopForSourceSwitch(command.tip)
-                is PlaybackCommand.ClearSourceSwitchTip -> container.clearSourceSwitchTip()
-                is PlaybackCommand.SetEpisodeSheetOpen -> container.setEpisodeSheetOpen(command.open)
-                is PlaybackCommand.SelectQuality -> container.selectQuality(command.position)
+                is PlaybackCommand.StopForContentSwitch -> c.stopForContentSwitch()
+                is PlaybackCommand.StopForSourceSwitch -> c.stopForSourceSwitch(command.tip)
+                is PlaybackCommand.ClearSourceSwitchTip -> c.clearSourceSwitchTip()
+                is PlaybackCommand.SetEpisodeSheetOpen -> c.setEpisodeSheetOpen(command.open)
+                is PlaybackCommand.SelectQuality -> c.selectQuality(command.position)
             }
         }
     }
 
-    LaunchedEffect(container, playSignal) {
+    LaunchedEffect(playSignal) {
         if (playSignal > 0) activity.playCurrent()
     }
 
@@ -138,10 +145,13 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                     .background(Color.Black)
             },
         ) {
-            AndroidView(
-                factory = { container },
-                modifier = Modifier.fillMaxSize(),
-            )
+            val playerContainer = container
+            if (playerContainer != null) {
+                AndroidView(
+                    factory = { playerContainer },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
             if (pageState is DetailViewModel.PageState.Loading && !fullBox) {
                 Box(
                     modifier = Modifier.fillMaxSize().background(Color.Black),
@@ -153,7 +163,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                     )
                 }
             }
-            if (!fullBox && pageState is DetailViewModel.PageState.Ready) {
+            if (!fullBox && playing && pageState is DetailViewModel.PageState.Ready) {
                 Icon(
                     painter = painterResource(R.drawable.ic_player_expand),
                     contentDescription = stringResource(R.string.detail_fullscreen_play),

@@ -417,6 +417,11 @@ open class AppPlayerView @JvmOverloads constructor(
         mVideoController?.onVideoSizeCleared()
     }
 
+    open fun forgetVideoSize() {
+        mVideoSize[0] = 0
+        mVideoSize[1] = 0
+    }
+
     open fun setProgressKey(key: String?) {
         mProgressKey = key
     }

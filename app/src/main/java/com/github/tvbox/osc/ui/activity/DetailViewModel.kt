@@ -61,6 +61,8 @@ class DetailViewModel : ViewModel() {
     val fullScreen = MutableStateFlow(false)
     val rotating = MutableStateFlow(false)
     val playSignal = MutableStateFlow(0)
+    val playing = MutableStateFlow(false)
+    val portraitResolved = MutableStateFlow(false)
     val collected = MutableStateFlow(false)
     val follow = MutableStateFlow<VodFollow?>(null)
     val qualityOptions = MutableStateFlow<List<String>>(emptyList())
@@ -202,6 +204,8 @@ class DetailViewModel : ViewModel() {
         toastEvent.value = null
         finishEvent.value = false
         pageState.value = PageState.Loading
+        playing.value = false
+        portraitResolved.value = false
         fallbackEpisode = null
         fallbackEpisodeIndex = -1
         usedSourceKeys.clear()
@@ -231,6 +235,19 @@ class DetailViewModel : ViewModel() {
 
     fun requestPlay() {
         playSignal.value += 1
+    }
+
+    fun onPlayRequested() {
+        fullScreen.value = true
+        rotating.value = false
+        portraitResolved.value = false
+        playSignal.value += 1
+    }
+
+    fun onVideoSizeResolved(portraitVideo: Boolean) {
+        if (portraitResolved.value) return
+        portraitResolved.value = true
+        LOG.i("echo-player detail size resolved: portrait=$portraitVideo full=${fullScreen.value}")
     }
 
     private fun consumeManualLineSwitch(): Boolean {
@@ -367,7 +384,6 @@ class DetailViewModel : ViewModel() {
                 if (!playingList.isNullOrEmpty()) switchSnapshot = null
                 pageState.value = PageState.Ready
                 bumpRevision()
-                requestPlay()
                 if (playingList.isNullOrEmpty()) {
                     startFallbackIfNeeded(auto = true)
                 }
@@ -509,6 +525,7 @@ class DetailViewModel : ViewModel() {
 
     private fun stopPlaybackForSwitch() {
         val info = vodInfo ?: return
+        playing.value = false
         if (switchSnapshot == null) {
             switchSnapshot = SwitchSnapshot(info, vodId, sourceKey, firstsourceKey, vodName, vodPicture)
         }
@@ -690,7 +707,7 @@ class DetailViewModel : ViewModel() {
         info.playIndex = position
         list.forEachIndexed { index, series -> series.selected = index == position }
         bumpRevision()
-        requestPlay()
+        onPlayRequested()
     }
 
     fun onFlagClick(flagName: String) {

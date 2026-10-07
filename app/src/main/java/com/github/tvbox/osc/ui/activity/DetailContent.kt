@@ -107,7 +107,7 @@ internal fun DetailContent(
                             modifier = Modifier.size(24.dp),
                         )
                     }
-                    IconButton(onClick = { activity.playContainer?.showCast() }) {
+                    IconButton(onClick = { activity.openCast() }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_detail_cast),
                             contentDescription = stringResource(R.string.common_cast),

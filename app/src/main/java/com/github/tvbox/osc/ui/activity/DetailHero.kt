@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.ui.activity
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,12 +20,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -44,14 +45,18 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.components.HeroSpotlightFadeStops
 import com.github.tvbox.osc.ui.components.HomeBackdrop
 import com.github.tvbox.osc.ui.components.ImagePalette
+import com.github.tvbox.osc.ui.components.LocalTopBarGlassBackdrop
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.VodPoster
-import com.github.tvbox.osc.ui.components.glassTopBarSurface
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val DetailTopScrimAlpha = 0.32f
+
+private const val HeroCircleAlpha = 0.6f
 
 private const val HERO_HEIGHT_RATIO = 0.70f
 
@@ -124,6 +129,8 @@ internal fun DetailHero(
     LaunchedEffect(picture) {
         if (HomeBackdrop.has(picture)) onBackdropSeed(HomeBackdrop.seedOf(picture))
     }
+    val glassBackdrop = rememberLayerBackdrop(onDraw = { drawContent() })
+    val circleColor = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = HeroCircleAlpha)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -133,21 +140,23 @@ internal fun DetailHero(
                     .coerceIn(HeroMinHeight, HeroMaxHeight),
             ),
     ) {
-        VodPoster(
-            name = title,
-            pic = picture,
-            preferLarge = true,
-            modifier = Modifier.fillMaxSize(),
-            onImage = { image ->
-                if (!HomeBackdrop.has(picture)) {
-                    scope.launch {
-                        val seed = withContext(Dispatchers.Default) { ImagePalette.seedOf(image) }
-                        HomeBackdrop.put(picture, seed)
-                        onBackdropSeed(seed)
+        Box(modifier = Modifier.fillMaxSize().layerBackdrop(glassBackdrop)) {
+            VodPoster(
+                name = title,
+                pic = picture,
+                preferLarge = true,
+                modifier = Modifier.fillMaxSize(),
+                onImage = { image ->
+                    if (!HomeBackdrop.has(picture)) {
+                        scope.launch {
+                            val seed = withContext(Dispatchers.Default) { ImagePalette.seedOf(image) }
+                            HomeBackdrop.put(picture, seed)
+                            onBackdropSeed(seed)
+                        }
                     }
-                }
-            },
-        )
+                },
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -159,31 +168,35 @@ internal fun DetailHero(
                     ),
                 ),
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TopBarActionBox(
-                iconRes = R.drawable.ic_arrow_left,
-                contentDescription = stringResource(R.string.common_back),
-                onClick = onBack,
-            )
-            Spacer(Modifier.weight(1f))
-            TopBarActionBox(
-                iconRes = if (collected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect,
-                contentDescription = stringResource(
-                    if (collected) R.string.detail_uncollect else R.string.detail_collect,
-                ),
-                onClick = onCollect,
-                tint = if (collected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
+        CompositionLocalProvider(LocalTopBarGlassBackdrop provides glassBackdrop) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TopBarActionBox(
+                    iconRes = R.drawable.ic_arrow_left,
+                    contentDescription = stringResource(R.string.common_back),
+                    onClick = onBack,
+                    fallbackColor = circleColor,
+                )
+                Spacer(Modifier.weight(1f))
+                TopBarActionBox(
+                    iconRes = if (collected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect,
+                    contentDescription = stringResource(
+                        if (collected) R.string.detail_uncollect else R.string.detail_collect,
+                    ),
+                    onClick = onCollect,
+                    fallbackColor = circleColor,
+                    tint = if (collected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
         }
         Column(
             modifier = Modifier
@@ -234,10 +247,10 @@ internal fun DetailHero(
                 contentAlignment = Alignment.Center,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.PlayArrow,
+                    Image(
+                        painter = painterResource(R.drawable.player_ic_play),
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary),
                         modifier = Modifier.size(22.dp),
                     )
                     Text(
@@ -316,7 +329,8 @@ private fun HeroCircleButton(
     Box(
         modifier = Modifier
             .size(HeroCircleButtonSize)
-            .glassTopBarSurface(CircleShape, MaterialTheme.colorScheme.surfaceBright)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = HeroCircleAlpha))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

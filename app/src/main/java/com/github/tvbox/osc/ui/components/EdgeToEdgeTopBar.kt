@@ -170,11 +170,12 @@ fun TopBarActionBox(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurface,
+    fallbackColor: Color = MaterialTheme.colorScheme.surfaceBright,
 ) {
     Box(
         modifier = modifier
             .size(40.dp)
-            .glassTopBarSurface(CircleShape, MaterialTheme.colorScheme.surfaceBright)
+            .glassTopBarSurface(CircleShape, fallbackColor)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

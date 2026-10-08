@@ -125,6 +125,18 @@ jobs:
             echo "existed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Write changelog to file
+        id: notes
+        env:
+          CHANGELOG: ${{ github.event.inputs.changelog }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$CHANGELOG" | awk 'NF{n++} n{print}' > release_body.md
+          echo "::notice::release body 行数: $(wc -l < release_body.md)"
+          echo "----- release_body.md -----"
+          cat release_body.md
+          echo "---------------------------"
+
       - name: Upload APK to Release
         uses: softprops/action-gh-release@v3
         with:
@@ -134,7 +146,7 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          body: ${{ github.event.inputs.changelog }}
+          body_path: release_body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

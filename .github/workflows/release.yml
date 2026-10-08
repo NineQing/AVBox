@@ -12,6 +12,11 @@ on:
         type: boolean
         required: false
         default: false
+      changelog:
+        description: '更新日志（支持多行，一行一条）'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -129,7 +134,7 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           fail_on_unmatched_files: true
           generate_release_notes: false
-          body: ""
+          body: ${{ github.event.inputs.changelog }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

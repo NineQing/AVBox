@@ -17,7 +17,7 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = 24
-        versionName = "1.2.3-aplha01"
+        versionName = "1.2.3-alpha01"
         multiDexEnabled = true
         ndk {
             abiFilters += setOf("arm64-v8a")

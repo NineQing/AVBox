@@ -80,6 +80,8 @@ class MusicSessionDelegate(private val host: Host) {
         return java.lang.Boolean.TRUE == isAudioOnlyPlayback() || host.attemptState().audioOnlyConfirmed
     }
 
+    fun isAudioOnlyContent(): Boolean = java.lang.Boolean.TRUE == isAudioOnlyPlayback()
+
     fun setMusicAudioOnly(enabled: Boolean) {
         if (musicPage == enabled && host.view()?.isAudioOnlyMode() == enabled) return
         val view = host.view() ?: return

@@ -265,13 +265,12 @@ class DetailActivity : BaseActivity(), PageHost {
         val controller = PlaybackService.peek()?.controller() ?: return false
         val url = controller.webPlayUrl() ?: return false
         val byUrl = PlaybackController.looksLikeAudioUrl(url)
-        val confirmed = controller.isConfirmedAudioOnly()
-        // 自动进入音乐页的判据：URL 后缀像音频，或本次播放已被确认为纯音频。
+        val byTrack = controller.isAudioOnlyContent()
         LOG.i(
-            "echo-music audio-content: byUrl=$byUrl confirmedAudioOnly=$confirmed"
+            "echo-music audio-content: byUrl=$byUrl audioOnlyContent=$byTrack"
                 + " url=" + url.substringBefore('?'),
         )
-        return byUrl || confirmed
+        return byUrl || byTrack
     }
 
     fun openMusicPlayer() {

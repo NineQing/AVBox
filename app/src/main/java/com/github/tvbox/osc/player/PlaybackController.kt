@@ -825,6 +825,10 @@ class PlaybackController {
         return music.isConfirmedAudioOnly()
     }
 
+    fun isAudioOnlyContent(): Boolean {
+        return music.isAudioOnlyContent()
+    }
+
     fun setMusicAudioOnly(enabled: Boolean) {
         music.setMusicAudioOnly(enabled)
     }

@@ -4866,3 +4866,41 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **验证**:`.\\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL,单测 **735 用例 / 0 失败**(新增 `DetailPlaybackPolicyTest` 11 例);`i18n_check_keys.py` 无 UNUSED / 未声明 key;`i18n_gate.py` ui 层硬闸门 0 处;已装机(vivo `10AF1J04JX0016G`)。真机走查归用户(判据在方案档 §7)。
 
 **文档同步**:`skill/avbox-mobile-ui-spec.md` §4.4 段首新增「2026-10-08 现状口径」条(两张脸 / 三条路 / 不起播清单 / 退全屏停播保内核 + 明确本节 3 条旧条目作废:竖屏 16:9 布局、预览态几何与预览态进度行、右下角全屏钮);`.codebuddy` / `.trae` 两镜像已同步。方案档(本地 `文档/detail-fullscreen-only-plan.md`)含分片施工备注、审查轮结论与待拍板项。
+
+## 播放器 Surface 竞态与切页链路修复(5 缺陷,2026-10-08,未 commit)
+
+**由来(用户真机走查)**:①「退出音乐播放页再进视频页必崩」→ 顺出同源 5 个缺陷;②中途用户报「全屏侧滑退出先闪暂停图标」「播放中切页弹播放错误 toast」「Texture 渲染下切页黑屏有声」「切页后进度条卡 0 不可拖」;③最后追问「切页再进入会重缓冲,解码器必须得重建吗」。
+
+**根因(一条主线)**:视频**输出面(Surface)的生命周期**与**视频渲染器启用态**被绑在一起。`clearDisplay()` 会经引擎不变量 `videoOutputInvalid` 顺手 `setRendererDisabled(video, true)`,换好面再放开 ⇒ track selection 变化 ⇒ media period 重配 ⇒ **codec 重建 + 约 460ms 重缓冲**。对照旧版(`57d92fb`,doikki fork):`VideoView.attachContainerTo()` 与今天几乎一致、**唯一差别就是不碰输出面**,`PlaybackEngine.attach()` 也不遮黑/不清面/不切渲染器 —— 故旧版切页不重建、不重缓冲。
+
+**5 个缺陷与修法**
+1. **退出音乐页 → `DECODER_INIT_FAILED: The surface has been released`**:`EngineTextureRenderView.release()` 只 `surface.release()`、从不通知播放器解绑;而新 SurfaceView 的 surface 异步建立,`attachToPlayer` 因 `isValid == false` 跳过 `setDisplay` ⇒ 播放器一直握着死面,`setAudioOnlyMode(false)` 抢先启用渲染器后解码器在死面 `configure()`。修 = 引擎收敛出唯一判据 **视频渲染器启用 ⟺ `!audioOnlyRequested && !videoOutputInvalid`**(`applyRendererEnablement()`)+ 释放旧视图前先解绑。
+2. **退出全屏闪中央 ▶ 暂停浮层**:`stopForExitFullscreen()` 的 `pause()` → `applyPlayState(PAUSED)` 里 `hideBottom()` 收掉 `controlsVisible` ⇒ `pauseOverlayVisible = PAUSED && !controlsVisible && !lifecyclePaused` 立刻成立 ⇒ `PlayerPauseLayer` 画出大 ▶。修 = 新增 `PlayerUiState.exitPaused`,`pauseOverlayVisible` 追加 `&& !exitPaused`,并在 `pause()` **之前**先 `setExitPaused(true)`(顺序关键)。**`lifecyclePaused` 不能复用** —— 那是"退后台保任务快照"的语义(提交 `e75e7d2`)。
+3. **播放中切页 → `obsolete surface` + 播放错误 toast**:容器从 A 页 slot **重挂**到 B 页 slot,SurfaceView 换父 ⇒ 旧面销毁重建,而 codec 仍在渲染旧面。修 = `attachContainerTo()` / `detachContainerFromHost()` 在 `removeView(mPlayerContainer)` **之前**先解绑输出面。
+4. **Texture 渲染下切页黑屏有声(缺陷 3 的修法引入的回归)**:`EngineTextureRenderView.onSurfaceTextureAvailable` 的「复用已有 texture」分支只 `setSurfaceTexture(existing); return`,**从不重新绑定播放器 surface**;而 `onSurfaceTextureDestroyed` 返回 `false`(框架不释放 SurfaceTexture)⇒ 容器重挂后**必然**走这个分支 ⇒ `videoOutputInvalid` 永真 ⇒ 渲染器永久关闭。修 = 该分支改走 `refreshSurface()`。
+5. **切页后进度条卡 0、不可拖动(回归)**:`ComposeVideoController.contentUrl` 是**每页一个控制器**的字段(`PlayContainer` 里 `new ComposeVideoController`),而 `MyVideoView` 是引擎共享的;新页面走 `setData` 的 `isSamePlaybackOwned` 分支(日志 `echo-p3 take over same playback`)**接管已有播放、不重下 url** ⇒ `onContentUrlSet` 从不被调用 ⇒ `staleContent` 恒真 ⇒ `state.position/duration` 不写(duration 为 0 时滑杆无量程,故也拖不动)。修 = 在 `isSamePlaybackOwned` 分支里补 `mController.onContentUrlSet(mVideoView?.currentUrl)`(该判定要求 `startedPlaybackKey == session.playbackKey`,**只在同一内容时为真**,是唯一安全的播种点)。
+   - **踩坑(同批内自我更正)**:初版把播种放在 `setKernelProvider(view)`(每次页面绑定共享播放器都播种),导致**换到不同影片时进度条闪回上一部的位置** —— 播种采纳的是播放器**当时**的地址(旧片),切换途中 `staleContent` 判假,把旧 duration/position 写进了 UI。真机证据:11:19:57.350 换到 `902056` → 11:19:58.243 `echo-bar-draw: progress=122.49 uiPosition=342611 uiDuration=2796920`(旧片 2796920) → 11:19:58.527 新片 2647960 才接管。改到接管分支后此现象消失。
+
+**最后一步优化(用户要求"回到旧版这样的效果")**:新增 `PlayerEngine.detachVideoSurface()` —— 只 `internalPlayer.clearVideoSurface()`、**不置** `videoOutputInvalid`;`KernelPlayer` / `ExoPlayer` 各加同名转发;`AppPlayerView.attachContainerTo()` / `detachContainerFromHost()` 由 `clearDisplay()` 改调它。于是换父前输出面已解绑(`obsolete surface` 仍防住),但渲染器启用态不变 ⇒ 无 track selection 变化 ⇒ 无 media period 重配。
+
+**改动(13 文件)**:`player/engine/PlayerEngine.kt`(不变量三件套 + `applyRendererEnablement()` / `setVideoOutputInvalid()` + `detachVideoSurface()`)、`player/host/EngineTextureRenderView.kt`(`release()` 先解绑再释放并置空;复用分支走 `refreshSurface()`)、`player/host/EngineSurfaceRenderView.kt`(新增 `released` 标记,`surfaceCreated/Changed/Destroyed` 与 `attachToPlayer` 全部加守卫 —— 防被移除的旧视图"迟到的 surfaceDestroyed"清掉新输出;`surfaceDestroyed` 亦由 `clearDisplay()` 改 `detachVideoSurface()`,见下"审查修复轮")、`player/host/PlayerRenderView.kt` + `player/MyVideoView.kt`(删已无用的 surface-ready 门控 `isSurfaceReady` / `runWhenSurfaceReady` / `runWhenRenderSurfaceReady`)、`player/AppPlayerView.kt`(`addDisplay()` 先解绑再释放;挂摘容器改走 `detachVideoSurface()`)、`player/KernelPlayer.kt` + `player/ExoPlayer.kt`(`detachVideoSurface()` 声明为 `abstract` 并由 `ExoPlayer` 实现;`clearDisplay()` 保留 `open`)、`player/PlaybackEngine.kt`(`attach()` 接管时按配置还原渲染视图;`HeadlessBridge.setAudioOnlyMode` 简化,不再手动等 surface 就绪)、`player/state/PlayerUiState.kt`(`exitPaused`)、`player/controller/PlayerControlApi.kt` + `player/controller/ComposeVideoController.kt`(`setExitPaused` 实现与复位)、`ui/player/PlayContainer.kt`(`stopForExitFullscreen()` 在 `pause()` 前 `setExitPaused(true)`;`isSamePlaybackOwned` 分支播种 `contentUrl`)、`test/.../PlayerUiStateVisibilityTest.kt`(+3 例)。
+
+**效果对照(同样 4 次切页)**
+
+| 指标 | `clearDisplay()` 版 | **`detachVideoSurface()` 版** |
+|---|---|---|
+| `echo-exo-codec-init` | 每次切页 1 次 | **全程 1 次**(仅会话开始) |
+| 切页后 BUFFERING | ~460ms | **无**(attach→PLAYING 7~8ms) |
+| `outputInvalid=true` 翻转 | 每次 1 次 | **0** |
+| `obsolete surface` / `ERROR_CODE` | 0 | **0** |
+| `release player kernel` | 0 | 0 |
+
+**代价登记(用户 2026-10-08 拍板保留)**:音乐页 → 视频页仍有 **383~525ms 重缓冲**。根因**不是**容器重挂,而是音乐页 WIP 新增的 `setAudioOnlyMode`(`audioOnlyRequested` true→false 必然引起 track selection 变化)。旧版音乐页只有 `MyVideoView.switchRenderToTexture()`、**不 disable 渲染器**,故无此代价。保留理由:该转换频率远低于普通切页,renderer disable 是刻意加的崩溃防护(避 1x1 Surface 在翻页时失效导致硬解崩溃),拿约 400ms 换稳定性划算。若日后要动:①回退成只切渲染视图(无重缓冲、放弃防护);②提前放开渲染器把重配藏进转场(需实测是否复发"解码器绑死 surface")。
+
+**验证**:`.\\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL;单测 `PlayerUiStateVisibilityTest` 10/10、`DetailPlaybackPolicyTest` 11/11;全程装机 vivo `10AF1J04JX0016G`(末次 `lastUpdateTime=2026-10-08 11:12:53`);5 个场景真机走查通过(`dumpsys activity exit-info` 无崩溃 / 无 ANR)。判据:退出音乐页无 `DECODER_INIT_FAILED`;退全屏无中央 ▶;切页有 `echo-exo-detach-surface: renderers kept`、无 `obsolete surface`、无 `release player kernel`;`echo-p2 engine create` 全程 1 次;`echo-progress-tick` 的 `stale=false`。
+
+**已作废的旧口径**:①「清输出面 = 同时禁用视频渲染器」—— 初版实现(`clearDisplay()` 走不变量)在切页路径上被推翻,两概念必须解耦(见上)。②「在 `setKernelProvider` 里播种 `contentUrl`」—— 见缺陷 5 的踩坑:它让换片时进度条闪回上一部;已改为只在 `isSamePlaybackOwned` 分支播种。
+
+**审查修复轮(同批,`skill/review/review-20261008-batch1.md`)**:按 `skill/avbox-code-review-spec.md` 审本批未提交 diff(26 文件 / +464 −25),出 4 条中级 + 6 条低级,无阻断无高级。已修 2 条中级:①`KernelPlayer.detachVideoSurface()` 由 `open { setSurface(null) }` 改 `abstract`(原默认实现会经 `setVideoSurface(null)` 置 `videoOutputInvalid` ⇒ 禁用渲染器,与"不改启用态"契约相反);②`EngineSurfaceRenderView.surfaceDestroyed` 由 `clearDisplay()` 改 `detachVideoSurface()`,与切页路径统一(实测容器重挂时 `echo-surface: destroyed` 0 次,本就不触发;`addDisplay()` 的 `clearDisplay()` 保留作音乐页退出的开关守卫)。**#3 为审查者误报,已驳回并恢复 WIP 原样**:我依据 `PlaybackSession.playbackKey()` 含 `vod.id` 推断"原条件已覆盖 WIP 注释所述场景",漏掉运行时路径 —— 音乐页的 `setMusicAudioOnly(true)` 会强制 audio-only,`MusicSessionDelegate:201` 因而把 `audioOnlyConfirmed` 置 true(即使内容带视频轨);"从音乐页返回同一内容"时 `playbackKey` 相同、原条件不清 ⇒ 被弹回音乐页(真机复现"进入视频就会重新进入音乐播放页")。WIP 的"每次 `startSession` 都清"正是修这个的。**#9 决定不改并留档**:给接管分支的 `contentUrl` 播种加 `scheduler.webPlayUrl()` 比对会在"线路地址 ≠ 播放器实际地址"时误判不一致 ⇒ 不播种 ⇒ 进度条卡 0 复发。P2 六项(`applyRendererEnablement` 与 `EngineTrackSelection` 双写 `rendererDisabled`、`PlayerBottomBar` 文件级 `lastDrawnProgress`、热路径诊断日志常开、`release()` 未清两个 renderer 列表、`detachVideoSurface` 无输出面仍解码、播种缺一致性校验)留到提交前一次性处理。
+
+**文档同步**:`skill/avbox-playback-service-spec.md` §3.8 新增两条约束(「输出面解绑与渲染器开关解耦」「`videoOutputInvalid` 一旦置真必须有确定复位路径」)、§7.4 补 5 行缺陷、§8 补修订记录;`.codebuddy` / `.trae` 两镜像已同步。方案档(本地 `文档/playback-surface-race-fixes.md`)含完整日志锚点、与旧版的逐项对照表、走查判据。

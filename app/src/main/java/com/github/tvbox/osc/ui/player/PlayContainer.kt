@@ -405,6 +405,13 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         }
     }
 
+    fun setAudioOnlyMode(audioOnly: Boolean) {
+        (mVideoView?.mediaPlayer as? ExoPlayer)?.setAudioOnlyMode(audioOnly)
+    }
+
+    fun isAudioOnlyMode(): Boolean =
+        (mVideoView?.mediaPlayer as? ExoPlayer)?.isAudioOnlyMode() == true
+
     fun reviveEngineIfReleased(): Boolean {
         if (engine != null && !engine!!.isReleased()) return false
         if (mActivity == null || surfaceSlot == null) return false
@@ -451,6 +458,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
             scheduler.setUserPickedLine(session.userPickedLine())
             rebindPlaybackOverlay()
             ownedPlaybackKey = session.playbackKey()
+            if (mController != null) mController.onContentUrlSet(mVideoView?.currentUrl)
             if (alignInstanceConfigOnTakeover()) return
             if (mVideoView != null && !mVideoView!!.isPlaying) mVideoView!!.start()
             return
@@ -500,8 +508,11 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         val cfg = scheduler.playerCfg() ?: return false
         mVideoView!!.setScreenScaleType(cfg.optInt("sc", 0))
         if (cfg.optInt("pl", 2) >= 10) return false
+        // 基准必须用「配置里期望的渲染类型」，不能用渲染视图工厂：音乐页的
+        // switchRenderToTexture 会把工厂改成 Texture，退出音乐页时工厂与配置不一致，
+        // 会据此误判成渲染类型变更而白白重建内核。
         val renderChanged = !scheduler.isConfirmedAudioOnly()
-            && mVideoView!!.needsRenderRebuild(cfg.optInt("pr", 1))
+            && mVideoView!!.isSurfaceRenderMismatch(cfg.optInt("pr", 1))
         val decodeChanged = !PlayerHelper.isExoDecodeApplied(cfg)
         if (!renderChanged && !decodeChanged) return false
         LOG.i(
@@ -713,6 +724,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     fun stopForExitFullscreen() {
         if (mVideoView == null || !hasClaimedPlayback()) return
         scheduler.cancelInFlight()
+        if (mController != null) mController.setExitPaused(true)
         mVideoView!!.pause()
         mVideoView!!.saveCurrentProgress()
         mVideoView!!.stopPlaybackKeepPlayer()

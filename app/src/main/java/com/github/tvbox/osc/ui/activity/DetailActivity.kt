@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.player.PageHost
 import com.github.tvbox.osc.player.PlaybackController
@@ -201,8 +202,28 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun ensurePlaying(): PlayContainer {
         val container = ensurePlayContainer()
-        if (PlaybackService.peek()?.controller()?.vod() == null) playCurrent()
+        if (!engineOwnsDetailContent()) playCurrent()
         return container
+    }
+
+    /**
+     * 引擎里已经装着内容、但装的是别的影片时（典型场景：在影片 A 的音乐页返回首页，
+     * 再打开全新影片 B），不能直接复用，否则音乐页拿到的是 A 的海报与内容。
+     */
+    private fun engineOwnsDetailContent(): Boolean {
+        val playing = PlaybackService.peek()?.controller()?.vod() ?: return false
+        val info = vm.vodInfo ?: return false
+        return contentMatches(playing, info)
+    }
+
+    private fun contentMatches(playing: VodInfo, info: VodInfo): Boolean {
+        if (playing.id != info.id) return false
+        // 首页复用同一播放器实例时 controller 的 sourceKey 可能取自上次会话，
+        // 因此只在本页确实用过该源时才要求源一致，避免把同一影片误判成新内容。
+        val expectedSource = vm.firstsourceKey
+        return expectedSource.isEmpty()
+            || playing.sourceKey == expectedSource
+            || vm.sourceKey == expectedSource
     }
 
     fun openCast() {
@@ -230,21 +251,27 @@ class DetailActivity : BaseActivity(), PageHost {
         val engine = PlaybackService.peek() ?: return false
         if (engine.isReleased() || engine.attachedPage() !== container) return false
         val state = engine.player().playState
-        if (state != PlayState.PREPARING &&
-            state != PlayState.PREPARED &&
-            state != PlayState.BUFFERING &&
-            state != PlayState.BUFFERED &&
-            state != PlayState.PLAYING
-        ) {
-            return false
-        }
-        return isAudioContent()
+        val accepted = state == PlayState.PREPARING ||
+            state == PlayState.PREPARED ||
+            state == PlayState.BUFFERING ||
+            state == PlayState.BUFFERED ||
+            state == PlayState.PLAYING
+        val matched = accepted && isAudioContent()
+        LOG.i("echo-music auto-watch: state=$state accepted=$accepted matched=$matched")
+        return matched
     }
 
     fun isAudioContent(): Boolean {
         val controller = PlaybackService.peek()?.controller() ?: return false
         val url = controller.webPlayUrl() ?: return false
-        return PlaybackController.looksLikeAudioUrl(url) || controller.isConfirmedAudioOnly()
+        val byUrl = PlaybackController.looksLikeAudioUrl(url)
+        val confirmed = controller.isConfirmedAudioOnly()
+        // 自动进入音乐页的判据：URL 后缀像音频，或本次播放已被确认为纯音频。
+        LOG.i(
+            "echo-music audio-content: byUrl=$byUrl confirmedAudioOnly=$confirmed"
+                + " url=" + url.substringBefore('?'),
+        )
+        return byUrl || confirmed
     }
 
     fun openMusicPlayer() {
@@ -252,15 +279,37 @@ class DetailActivity : BaseActivity(), PageHost {
             Toast.makeText(this, getString(R.string.detail_content_not_ready), Toast.LENGTH_SHORT).show()
             return
         }
+        // 先按纯音频启动，避免详情页这一帧就把视频解码器建起来（交接后无法回收）。
+        prepareAudioOnlyForMusicPage()
         ensurePlaying()
         if (!handOffToMusicPlayer()) {
             Toast.makeText(this, getString(R.string.detail_no_playable_content), Toast.LENGTH_SHORT).show()
         }
     }
 
+    private fun prepareAudioOnlyForMusicPage() {
+        PlaybackService.peek()?.controller()?.setMusicAudioOnly(true)
+    }
+
+    private fun restoreVideoAfterMusicPage() {
+        PlaybackService.peek()?.controller()?.setMusicAudioOnly(false)
+    }
+
     fun handOffToMusicPlayer(): Boolean {
         val container = playContainer ?: return false
-        if (PlaybackService.peek()?.controller()?.vod() == null) return false
+        val playing = PlaybackService.peek()?.controller()?.vod()
+        if (playing == null) {
+            restoreVideoAfterMusicPage()
+            return false
+        }
+        // 引擎里若还装着别的影片，先切到本页内容，避免音乐页显示上一部影片。
+        val info = vm.vodInfo
+        if (info != null && !contentMatches(playing, info)) {
+            LOG.i("echo-music handoff switch content: " + playing.id + " -> " + info.id)
+            restoreVideoAfterMusicPage()
+            playCurrent()
+        }
+        prepareAudioOnlyForMusicPage()
         val keepDetailPage = !isAudioContent()
         container.setExitingPreview(true)
         container.handOverToNextPage()

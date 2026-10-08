@@ -14,6 +14,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import com.github.tvbox.osc.R
@@ -42,7 +43,7 @@ class DetailActivity : BaseActivity(), PageHost {
         ViewModelProvider(this)[DetailViewModel::class.java]
     }
 
-    var playContainer: PlayContainer? = null
+    var playContainer: PlayContainer? by mutableStateOf<PlayContainer?>(null)
         private set
     private var fullScreen = false
     private var pendingEpisodeSync = false
@@ -58,7 +59,13 @@ class DetailActivity : BaseActivity(), PageHost {
     private val castWaitRunnable = object : Runnable {
         override fun run() {
             val container = playContainer ?: return
-            if (container.hasCastUrl() || castWaitAttempts >= CAST_URL_WAIT_ATTEMPTS) {
+            if (container.hasCastUrl()) {
+                container.endCastPrepare()
+                container.showCast()
+                return
+            }
+            if (castWaitAttempts >= CAST_URL_WAIT_ATTEMPTS) {
+                container.endCastPrepare()
                 container.showCast()
                 return
             }
@@ -104,6 +111,9 @@ class DetailActivity : BaseActivity(), PageHost {
                 val container = playContainer
                 if (fullScreen) {
                     if (container != null && container.onBackPressed()) return
+                    if (DetailPlaybackPolicy.plan(DetailPlaybackEntry.ExitFullscreen).stopPlayback) {
+                        container?.stopForExitFullscreen()
+                    }
                     vm.onFullScreenToggleRequested(false, playbackFacts())
                 } else {
                     if (vm.backToPreviousTarget()) {
@@ -179,13 +189,14 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun playCurrent() {
         val container = ensurePlayContainer()
+        cancelCastWait()
+        container.endCastPrepare()
         val session = vm.preparePlaySession()
         if (session == null) {
             container.clearSourceSwitchTip()
             return
         }
         container.setData(session)
-        vm.playing.value = true
     }
 
     fun ensurePlaying(): PlayContainer {
@@ -195,14 +206,22 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     fun openCast() {
-        val container = ensurePlaying()
+        val container = ensurePlayContainer()
+        cancelCastWait()
+        container.beginCastPrepare()
+        val session = vm.preparePlaySession()
+        if (session == null) {
+            container.endCastPrepare()
+            Toast.makeText(this, getString(R.string.toast_no_cast_url), Toast.LENGTH_SHORT).show()
+            return
+        }
+        container.setData(session)
+        window.decorView.postDelayed(castWaitRunnable, CAST_URL_POLL_MS)
+    }
+
+    private fun cancelCastWait() {
         castWaitAttempts = 0
         window.decorView.removeCallbacks(castWaitRunnable)
-        if (container.hasCastUrl()) {
-            container.showCast()
-        } else {
-            window.decorView.postDelayed(castWaitRunnable, CAST_URL_POLL_MS)
-        }
     }
 
     fun musicPlaybackDetected(): Boolean {
@@ -337,10 +356,11 @@ class DetailActivity : BaseActivity(), PageHost {
         applyStatusBarAppearance()
         playContainer?.hostResume()
         syncEpisodeAfterMusicPage()
-        val container = playContainer
-        if (container != null && container.hasClaimedPlayback() && !container.ownsEngineContent()) {
-            vm.requestPlay()
-        }
+        val container = playContainer ?: return
+        vm.applyPlaybackEntry(
+            DetailPlaybackEntry.MusicReturn,
+            resumable = container.hasClaimedPlayback() && !container.ownsEngineContent(),
+        )
     }
 
     override fun onPause() {

@@ -61,7 +61,6 @@ class DetailViewModel : ViewModel() {
     val fullScreen = MutableStateFlow(false)
     val rotating = MutableStateFlow(false)
     val playSignal = MutableStateFlow(0)
-    val playing = MutableStateFlow(false)
     val portraitResolved = MutableStateFlow(false)
     val collected = MutableStateFlow(false)
     val follow = MutableStateFlow<VodFollow?>(null)
@@ -119,6 +118,7 @@ class DetailViewModel : ViewModel() {
         val firstsourceKey: String,
         val vodName: String,
         val vodPicture: String,
+        val wasPlaying: Boolean,
     )
 
     private var switchSnapshot: SwitchSnapshot? = null
@@ -204,7 +204,6 @@ class DetailViewModel : ViewModel() {
         toastEvent.value = null
         finishEvent.value = false
         pageState.value = PageState.Loading
-        playing.value = false
         portraitResolved.value = false
         fallbackEpisode = null
         fallbackEpisodeIndex = -1
@@ -233,20 +232,23 @@ class DetailViewModel : ViewModel() {
         revision.value += 1
     }
 
-    fun requestPlay() {
-        playSignal.value += 1
-    }
-
-    fun onPlayRequested() {
+    internal fun onPlayRequested(entry: DetailPlaybackEntry) {
         val list = vodInfo?.seriesMap?.get(vodInfo?.playFlag)
         if (list.isNullOrEmpty()) {
             toastEvent.value = str(R.string.detail_no_playable_content)
             return
         }
-        fullScreen.value = true
-        rotating.value = false
-        portraitResolved.value = false
-        playSignal.value += 1
+        applyPlaybackEntry(entry)
+    }
+
+    internal fun applyPlaybackEntry(entry: DetailPlaybackEntry, resumable: Boolean = false) {
+        val plan = DetailPlaybackPolicy.plan(entry, resumable)
+        if (plan.enterFullScreen) {
+            fullScreen.value = true
+            rotating.value = false
+            portraitResolved.value = false
+        }
+        if (plan.startPlayback) playSignal.value += 1
     }
 
     fun onVideoSizeResolved(portraitVideo: Boolean) {
@@ -530,9 +532,16 @@ class DetailViewModel : ViewModel() {
 
     private fun stopPlaybackForSwitch() {
         val info = vodInfo ?: return
-        playing.value = false
         if (switchSnapshot == null) {
-            switchSnapshot = SwitchSnapshot(info, vodId, sourceKey, firstsourceKey, vodName, vodPicture)
+            switchSnapshot = SwitchSnapshot(
+                info,
+                vodId,
+                sourceKey,
+                firstsourceKey,
+                vodName,
+                vodPicture,
+                wasPlaying = fullScreen.value,
+            )
         }
         sendCommand(PlaybackCommand.StopForSourceSwitch(str(R.string.detail_switching_source)))
     }
@@ -557,7 +566,7 @@ class DetailViewModel : ViewModel() {
             }
         pageState.value = PageState.Ready
         bumpRevision()
-        requestPlay()
+        applyPlaybackEntry(DetailPlaybackEntry.SwitchRollback, resumable = snapshot.wasPlaying)
         return true
     }
 
@@ -708,11 +717,11 @@ class DetailViewModel : ViewModel() {
     fun onEpisodeClick(position: Int) {
         val info = vodInfo ?: return
         val list = info.seriesMap?.get(info.playFlag) ?: return
-        if (position < 0 || position >= list.size || position == info.playIndex) return
+        if (position < 0 || position >= list.size) return
         info.playIndex = position
         list.forEachIndexed { index, series -> series.selected = index == position }
         bumpRevision()
-        onPlayRequested()
+        onPlayRequested(DetailPlaybackEntry.Episode)
     }
 
     fun onFlagClick(flagName: String) {
@@ -729,8 +738,9 @@ class DetailViewModel : ViewModel() {
         }
         info.seriesFlags.orEmpty().forEach { it.selected = it.name == flagName }
         manualLineSwitchPending = true
+        qualityOptions.value = emptyList()
+        qualitySelected.value = 0
         bumpRevision()
-        requestPlay()
     }
 
     fun toggleReverse() {
@@ -788,11 +798,9 @@ class DetailViewModel : ViewModel() {
     }
 
     fun onQualityClick(position: Int, facts: DetailPlaybackFacts) {
-        if (position == qualitySelected.value) {
-            onFullScreenToggleRequested(true, facts)
-            return
-        }
-        sendCommand(PlaybackCommand.SelectQuality(position))
+        val plan = DetailPlaybackPolicy.plan(DetailPlaybackEntry.Quality)
+        if (plan.enterFullScreen) onFullScreenToggleRequested(true, facts)
+        if (plan.startPlayback) sendCommand(PlaybackCommand.SelectQuality(position))
     }
 
     fun onQualitySelectionAccepted(position: Int) {

@@ -6,18 +6,13 @@ import android.content.res.Configuration
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -31,21 +26,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.bean.Movie
-import com.github.tvbox.osc.player.ui.playerDim
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.PosterBackdrop
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
-import com.github.tvbox.osc.ui.player.PlayContainer
 import com.github.tvbox.osc.ui.theme.AppThemeState
 import kotlinx.coroutines.delay
 import com.github.tvbox.osc.ui.page.jumpToSearch
@@ -59,7 +50,6 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
     val rotating by vm.rotating.collectAsState()
     val revision by vm.revision.collectAsState()
     val playSignal by vm.playSignal.collectAsState()
-    val playing by vm.playing.collectAsState()
     val toast by vm.toastEvent.collectAsState()
     val finish by vm.finishEvent.collectAsState()
     val vodMenu = rememberVodCardMenuState()
@@ -67,13 +57,8 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
     val configuration = LocalConfiguration.current
     val isLandscapeNow = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val fullBox = if (rotating) isLandscapeNow else full
-    val shortEdge = minOf(configuration.screenWidthDp, configuration.screenHeightDp).dp
-    val longEdge = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).dp
-    val previewBoxHeight = (shortEdge * 9f / 16f)
-        .coerceAtLeast(150.dp)
-        .coerceAtMost(maxOf(150.dp, longEdge / 2))
 
-    var container by remember { mutableStateOf<PlayContainer?>(null) }
+    val container = activity.playContainer
     var backdropPic by remember { mutableStateOf("") }
     var backdropSeed by remember { mutableStateOf<Int?>(null) }
     val darkTheme = AppThemeState.isDark(isSystemInDarkTheme())
@@ -83,8 +68,8 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
         }
     } ?: MaterialTheme.colorScheme
 
-    LaunchedEffect(playing, playSignal) {
-        if (container == null && (playing || playSignal > 0)) container = activity.ensurePlayContainer()
+    LaunchedEffect(full, playSignal) {
+        if (activity.playContainer == null && (full || playSignal > 0)) activity.ensurePlayContainer()
     }
 
     LaunchedEffect(vm) {
@@ -151,14 +136,10 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
             Box(modifier = Modifier.fillMaxSize()) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(
-                        modifier = when {
-                            fullBox -> Modifier.fillMaxSize().background(Color.Black)
-                            playing -> Modifier.fillMaxWidth()
-                                .background(Color.Black)
-                                .statusBarsPadding()
-                                .height(previewBoxHeight)
-                                .background(Color.Black)
-                            else -> Modifier.fillMaxWidth().height(0.dp)
+                        modifier = if (fullBox) {
+                            Modifier.fillMaxSize().background(Color.Black)
+                        } else {
+                            Modifier.fillMaxWidth().height(0.dp)
                         },
                     ) {
                         val playerContainer = container
@@ -166,22 +147,6 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                             AndroidView(
                                 factory = { playerContainer },
                                 modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                        if (!fullBox && playing && pageState is DetailViewModel.PageState.Ready) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_player_expand),
-                                contentDescription = stringResource(R.string.detail_fullscreen_play),
-                                tint = Color.White.copy(alpha = 0.9f),
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(
-                                        end = 16.dp,
-                                        bottom = (16.dp + playerDim(R.dimen.vs_30) / 2 - 20.dp).coerceAtLeast(0.dp),
-                                    )
-                                    .size(40.dp)
-                                    .clickable { vm.onFullScreenToggleRequested(true, activity.playbackFacts()) }
-                                    .padding(9.dp),
                             )
                         }
                     }
@@ -212,7 +177,6 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                                     activity = activity,
                                     vm = vm,
                                     revision = revision,
-                                    playing = playing,
                                     onPosterPic = { backdropPic = it },
                                     onSeed = { argb -> if (argb != null) backdropSeed = argb },
                                     onCardLongClick = { vodMenu.show(it) },

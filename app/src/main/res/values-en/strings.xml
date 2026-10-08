@@ -318,7 +318,6 @@
     <string name="player_scale_crop">Crop</string>
     <string name="player_parse_failed_prefix">Parse failed >>> %1$s</string>
 
-    <string name="detail_fullscreen_play">Play fullscreen</string>
     <string name="detail_empty_source">No sources. Try switching source or searching</string>
     <string name="detail_music_player">Open Music Player</string>
     <string name="detail_uncollect">Remove favorite</string>
@@ -524,7 +523,6 @@
     <string name="music_mode_order">In order</string>
     <string name="live_source_auto_disabled">This source was auto-disabled. You can re-enable it in Config Management</string>
     <string name="toast_file_picker_unavailable">Cannot open the file picker</string>
-    <string name="toast_permission_required">Permission required</string>
     <string name="toast_folder_data_missing">Folder data is missing, cannot open</string>
 
     <string name="player_sniffing_url">Sniffing playback URL</string>

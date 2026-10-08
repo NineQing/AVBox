@@ -284,6 +284,10 @@ class PlaybackController {
             music.stopMusicSessionForFailedPlayback()
         }
 
+        override fun closeCastPrepare() {
+            this@PlaybackController.closeCastPrepare()
+        }
+
         override fun isCrossContentReuseAllowed(): Boolean = this@PlaybackController.isCrossContentReuseAllowed()
     })
 
@@ -327,6 +331,18 @@ class PlaybackController {
         st.beginNewPlay()
         timeouts.cancelPendingCompletionDrop()
         st.audioOnlyConfirmed = false
+    }
+
+    fun setCastPrepareOnly(prepareOnly: Boolean) {
+        st.castPrepareOnly = prepareOnly
+    }
+
+    fun isCastPrepareOnly(): Boolean = st.castPrepareOnly
+
+    fun closeCastPrepare() {
+        st.castPrepareOnly = false
+        resolver.nextGen()
+        LOG.i("echo-cast prepare closed: drop in-flight resolve results")
     }
 
     fun markStoppedForSourceSwitch() {
@@ -640,6 +656,14 @@ class PlaybackController {
 
         override fun startSwitchLinePlayTimeout() {
             this@PlaybackController.startSwitchLinePlayTimeout()
+        }
+
+        override fun cancelPlayTimeout() {
+            this@PlaybackController.cancelPlayTimeout()
+        }
+
+        override fun closeCastPrepare() {
+            this@PlaybackController.closeCastPrepare()
         }
 
         override fun setPlayTimeoutBasePosition(position: Long) {

@@ -1,11 +1,7 @@
 package com.github.tvbox.osc.ui.activity
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -20,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -39,7 +34,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,14 +44,12 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.data.FollowDays
 import com.github.tvbox.osc.ui.components.FollowReminderSheet
-import com.github.tvbox.osc.ui.theme.filterChipColors
 
 @Composable
 internal fun DetailContent(
     activity: DetailActivity,
     vm: DetailViewModel,
     revision: Int,
-    playing: Boolean,
     onPosterPic: (String) -> Unit,
     onSeed: (Int?) -> Unit,
     onCardLongClick: (Movie.Video) -> Unit,
@@ -83,52 +75,24 @@ internal fun DetailContent(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
     ) {
-        if (playing) {
-            item(key = "actions") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 12.dp),
-                ) {
-                    Text(
-                        text = info.name ?: "TVBox",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    DetailActionRow(
-                        collected = collected,
-                        followed = followRecord != null,
-                        onMusic = { activity.openMusicPlayer() },
-                        onCast = { activity.openCast() },
-                        onCollect = { vm.toggleCollect() },
-                        onFollow = { followScheduleOpen = true },
-                        modifier = Modifier.padding(top = 12.dp),
-                    )
-                }
-            }
-        } else {
-            item(key = "hero") {
-                DetailHero(
-                    title = info.name ?: "TVBox",
-                    picture = info.pic,
-                    year = info.year,
-                    area = info.area,
-                    type = info.type,
-                    collected = collected,
-                    followed = followRecord != null,
-                    onPosterPic = onPosterPic,
-                    onSeed = onSeed,
-                    onBack = { activity.onBackPressedDispatcher.onBackPressed() },
-                    onPlay = { vm.onPlayRequested() },
-                    onMusic = { activity.openMusicPlayer() },
-                    onCast = { activity.openCast() },
-                    onCollect = { vm.toggleCollect() },
-                    onFollow = { followScheduleOpen = true },
-                )
-            }
+        item(key = "hero") {
+            DetailHero(
+                title = info.name ?: "TVBox",
+                picture = info.pic,
+                year = info.year,
+                area = info.area,
+                type = info.type,
+                collected = collected,
+                followed = followRecord != null,
+                onPosterPic = onPosterPic,
+                onSeed = onSeed,
+                onBack = { activity.onBackPressedDispatcher.onBackPressed() },
+                onPlay = { vm.onPlayRequested(DetailPlaybackEntry.PlayCapsule) },
+                onMusic = { activity.openMusicPlayer() },
+                onCast = { activity.openCast() },
+                onCollect = { vm.toggleCollect() },
+                onFollow = { followScheduleOpen = true },
+            )
         }
 
         item(key = "desc") {
@@ -137,11 +101,12 @@ internal fun DetailContent(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 16.dp),
+                        .padding(start = 16.dp, end = 16.dp, top = 4.dp),
                 ) {
                     Text(
                         text = desc,
                         style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = if (descExpanded) Int.MAX_VALUE else 3,
                         overflow = TextOverflow.Ellipsis,
@@ -238,7 +203,8 @@ internal fun DetailContent(
                             onClick = { vm.onQualityClick(index, activity.playbackFacts()) },
                             label = { Text(option) },
                             shape = RoundedCornerShape(20.dp),
-                            colors = MaterialTheme.colorScheme.filterChipColors(),
+                            border = detailChipBorder(selected = index == qualitySelected),
+                            colors = detailChipColors(),
                         )
                     }
                 }
@@ -271,8 +237,6 @@ internal fun DetailContent(
     }
 }
 
-private val LineCardWidth = 160.dp
-
 @Composable
 private fun LineCard(
     name: String,
@@ -280,55 +244,25 @@ private fun LineCard(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(16.dp)
-    Column(
-        modifier = Modifier
-            .width(LineCardWidth)
-            .clip(shape)
-            .background(detailCardColor())
-            .then(
-                if (selected) {
-                    Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, shape)
-                } else {
-                    Modifier
-                },
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+    DetailItemCard(
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.width(DetailItemWidth),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(R.drawable.player_ic_play),
-                    contentDescription = null,
-                    colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary),
-                    modifier = Modifier.size(12.dp),
-                )
-            }
-            Text(
-                text = name,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .weight(1f, fill = false),
-            )
-        }
+        Text(
+            text = name,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         Text(
             text = stringResource(R.string.detail_line_video_count, count),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
-            modifier = Modifier.padding(start = 30.dp, top = 6.dp),
+            modifier = Modifier.padding(top = 6.dp),
         )
     }
 }
@@ -342,9 +276,7 @@ private fun ChipRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 6.dp, end = 6.dp, top = 12.dp)
-            .background(detailCardColor(), RoundedCornerShape(16.dp))
-            .padding(vertical = 12.dp),
+            .padding(top = 16.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

@@ -318,7 +318,6 @@
     <string name="player_scale_crop">裁剪</string>
     <string name="player_parse_failed_prefix">解析失败 >>> %1$s</string>
 
-    <string name="detail_fullscreen_play">全屏播放</string>
     <string name="detail_empty_source">暂无片源,可尝试换源或搜索</string>
     <string name="detail_music_player">进入音乐播放器</string>
     <string name="detail_uncollect">取消收藏</string>
@@ -524,7 +523,6 @@
     <string name="music_mode_order">顺序播放</string>
     <string name="live_source_auto_disabled">该源已被自动停用，可在配置管理中重新启用</string>
     <string name="toast_file_picker_unavailable">无法打开文件选择器</string>
-    <string name="toast_permission_required">请授予权限</string>
     <string name="toast_folder_data_missing">目录数据缺失,无法打开</string>
 
     <string name="player_sniffing_url">正在嗅探播放地址</string>

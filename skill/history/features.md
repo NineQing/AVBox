@@ -4854,3 +4854,15 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **验证**:`.\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL;单测 **94 套 / 721 用例 / 0 失败**;已装机(vivo `10AF1J04JX0016G`,`lastUpdateTime=2026-10-08 05:28:01`)。**走查判据**:①沉浸式首页 Hero 下缘应从"海报"自然过渡到"同一图的模糊延伸 + 取色底",看不到横向"分隔线/终止边";②标题/评分/圆点在明暗两种海报下都可读;③下滑后区块标题、chips、卡片区文字可读,模糊可见但不抢内容;④Hero 左右滑动:模糊底随停稳页 200ms 换图、不闪、不卡;⑤竖向(普通)布局与 API<31 设备外观与改造前一致(退回纯色底)。
 
 **文档同步**:`skill/avbox-mobile-ui-spec.md` §6.9 新增"沉浸式首页的模糊底只能有一层,且必须带蒙层下限"条(含 API 31 门控、与 Hero 共用曲线、下限不可撤三条硬约束)。`.codebuddy` / `.trae` 两镜像已同步。
+
+## 详情页播放入口收敛(只留海报页与全屏,8 片 + 审查轮,2026-10-08,未 commit)
+
+**口径(用户真机走查逐条拍板)**:详情页只有两张脸 —— 未起播 = 海报 Hero 页,起播 = 全屏,顶部 16:9 小窗整体删除。**进播放三条路(一律先进全屏)**:播放胶囊 / 选集卡(含当前集)/ 画质 chip。**线路、投屏、换源回滚一律不起播**;投屏改「只解析地址不播放」,解析失败也不以起播兜底;退全屏 = 停播回海报但保留内核复用。
+
+**分片**:①删 16:9 小窗(顶部播放器盒子只留 `fullBox` 撑满 / 高 0 两态,删 `previewBoxHeight`、右下角展开图标、文案 `detail_fullscreen_play`);②退全屏停播 `PlayContainer.stopForExitFullscreen()`(`pause` + 存进度 + `stopPlaybackKeepPlayer` 保内核 + 撤播放通知 + 清 `ownedPlaybackKey`),`DetailViewModel.playing` 删除、`DetailActivity.playContainer` 提升为 Compose state;③点线路只切选中 + 清画质残留(不再起播);④点当前集也进全屏;⑤投屏只解析(`PlaybackAttemptState.castPrepareOnly`:仅解析模式跳过内核清理/历史写/进度写/publishTitle/清弹幕歌词/画质 chip 等全部写入类副作用,`goPlayUrl` 拿地址即 return;收摊入口 `closeCastPrepare()` = 清开关 + `resolver.nextGen()` 代次失效);⑥换源失败回滚只在"换源前在播"才续播(`SwitchSnapshot.wasPlaying` 取值 `fullScreen`,当前入口只有海报页 ⇒ 实际等于不续播);⑦判据收进纯函数 `ui/activity/DetailPlaybackPolicy.kt` + 11 例单测(**改入口先改表**);⑧死资源清理(`detail_fullscreen_play` 四语 / `ic_player_expand` / `DetailScreen` 与 `PlayContainer` 的 4 个死 import / 既有死 key `toast_permission_required`)。
+
+**审查轮(同批,片 1–7 全量复核,6 类修复)**:两条中级 —— ①投屏收摊原用 `st.switchStopPending`,该标志挂到下次 `play()`,会把海报页「点另一个画质 chip」和「重播当前地址」这些无关 `goPlayUrl` 一起压掉(静默失效)⇒ 改代次失效;②投屏轮询跨内容存活 —— 点投屏后 5s 内切内容/换源,迟到的地址会把设备列表弹到新内容上 ⇒ `stopForSourceSwitch()` / `stopForContentSwitch()` 开头 `endCastPrepare()`。其余:仅解析拿地址那一刻也走统一收摊、删 5 处解释性注释(全库零注释)、去死 elvis(`chip.name ?: ""`)、删死 import。
+
+**验证**:`.\\gradlew.bat :app:assembleDebug :app:testDebugUnitTest` BUILD SUCCESSFUL,单测 **735 用例 / 0 失败**(新增 `DetailPlaybackPolicyTest` 11 例);`i18n_check_keys.py` 无 UNUSED / 未声明 key;`i18n_gate.py` ui 层硬闸门 0 处;已装机(vivo `10AF1J04JX0016G`)。真机走查归用户(判据在方案档 §7)。
+
+**文档同步**:`skill/avbox-mobile-ui-spec.md` §4.4 段首新增「2026-10-08 现状口径」条(两张脸 / 三条路 / 不起播清单 / 退全屏停播保内核 + 明确本节 3 条旧条目作废:竖屏 16:9 布局、预览态几何与预览态进度行、右下角全屏钮);`.codebuddy` / `.trae` 两镜像已同步。方案档(本地 `文档/detail-fullscreen-only-plan.md`)含分片施工备注、审查轮结论与待拍板项。

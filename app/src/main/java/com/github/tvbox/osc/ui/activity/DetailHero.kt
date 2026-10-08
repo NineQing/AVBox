@@ -71,7 +71,7 @@ private val HeroMaxHeight = 660.dp
 
 private val HeroCaptionHorizontalPadding = 24.dp
 
-private val HeroCaptionBottomPadding = 28.dp
+private val HeroCaptionBottomPadding = 16.dp
 
 private val HeroCaptionSpacing = 6.dp
 
@@ -83,7 +83,7 @@ private val HeroPlayCapsuleHorizontalPadding = 32.dp
 
 private val HeroCircleButtonSize = 52.dp
 
-private val HeroCircleButtonSpacing = 16.dp
+private val HeroCircleButtonSpacing = 24.dp
 
 private val HeroActionSpacing = 20.dp
 
@@ -269,11 +269,9 @@ internal fun DetailHero(
                 }
             }
             DetailActionRow(
-                collected = collected,
                 followed = followed,
                 onMusic = onMusic,
                 onCast = onCast,
-                onCollect = onCollect,
                 onFollow = onFollow,
                 modifier = Modifier.padding(top = HeroButtonRowSpacing),
             )
@@ -283,11 +281,9 @@ internal fun DetailHero(
 
 @Composable
 internal fun DetailActionRow(
-    collected: Boolean,
     followed: Boolean,
     onMusic: () -> Unit,
     onCast: () -> Unit,
-    onCollect: () -> Unit,
     onFollow: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -309,14 +305,6 @@ internal fun DetailActionRow(
             onClick = onCast,
         )
         HeroCircleButton(
-            iconRes = if (collected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect,
-            contentDescription = stringResource(
-                if (collected) R.string.detail_uncollect else R.string.detail_collect,
-            ),
-            selected = collected,
-            onClick = onCollect,
-        )
-        HeroCircleButton(
             iconRes = R.drawable.ic_tab_following,
             contentDescription = stringResource(R.string.tab_following),
             selected = followed,
@@ -335,8 +323,7 @@ private fun HeroCircleButton(
     Box(
         modifier = Modifier
             .size(HeroCircleButtonSize)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = HeroCircleAlpha))
+            .detailGlass(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

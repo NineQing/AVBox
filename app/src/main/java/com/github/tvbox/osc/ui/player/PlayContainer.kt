@@ -213,7 +213,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
-        trackSelector.invalidatePendingSwitch()
         if (danmuLoadController != null) {
             danmuLoadController!!.destroy()
             danmuLoadController = null

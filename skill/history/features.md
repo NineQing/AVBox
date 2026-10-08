@@ -4976,3 +4976,15 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **走查判据**：① 设置页「播放内核」只有「Media3」（探测到 TVBox 时多一项「附近TVBox」）；② 播放器参数面板「播放器」组、底栏播放器按钮循环切换均无 MX/Reex/Kodi/VLC；③ 曾选过外部播放器的老片源起播直接走内置、不再弹"调用外部播放器…失败"、不黑屏；④ 装了 MX/Kodi/VLC 的设备上列表也不出现它们（含 Android 10 及以下）；⑤ 投屏面板「附近TVBox」照常可用。
 
 **审查轮（同批，`skill/review/review-20261008-batch4.md`）**：R1 主审 + R2 独立只读子代理，**无阻断 / 无高**，判可收尾。**已修 4 条**：① 历史 `PLAY_TYPE=10..14` 时设置页「播放内核」显示与置灰不一致（`App.initParams` 启动期归一化，`>2 && !=13` 归 2；设置页两行 `enabled` 改用归一化后的 `currentPlayType`）；② 三语文案「调用外部播放器…」→「推送到 %1$s …」（该 key 唯一用途已是附近TVBox 推送，key 名保留）；③ 删死方法 `PlayerHelper.getPlayersInfo()`（全仓无调用方）；④ 活规范置灰判据同步（+ 两镜像）。**登记 3 条**：TVBox 推送"假成功"（**既有被放大**：`RemoteTVBox.run` 无条件返回 true + `PlaybackStarter` 先 `releasePlayer()` 再推送 ⇒ 设备离线时内播被停仍报成功；备选修法见报告 §4）、设置页归一化只落渲染层（`PLAY_TYPE=13` 且无 `REMOTE_TVBOX` 时显示/KV 分叉，刻意不写回以保留用户选择）、仅 `[2]` 时内核行点击无变化（可选置灰）。**755 例 / 0 失败**；`i18n_check_keys` 545/545、align 三语全 PASS、`i18n_gate` ui 0 处。
+
+## 2026-10-09｜直播页状态面重构（反射桥 / 计数器 / Activity 参透 → 单一 `LivePlayUiState` + 切片传参）
+
+**触发**：Composable 直接读 Activity 可变属性、`VmVar` 用反射做桥、裸表达式计数器触发重组。核查后确认病灶不是反射（产物里确有 kotlin-reflect，但本页没有 60fps 级读取者），而是"组合期做非纯计算 + 失效语义手工维护 + 状态面双轨"。方案档 `文档/live-page-state-refactor-plan.md`（本地不入库）。
+
+**落地（5 片全部实施完，未提交）**：① 片 1 删 `VmVar`/`VmVal` 反射桥 → 28 个显式 get/set（字节码证据：`LivePlayActivity$VmVar`/`$VmVal` 类消失，常量池只剩 `viewModels()` 的 `getOrCreateKotlinClass`）；② 片 2 EPG/回看簇进 `LiveEpgUi`/`LiveTimeshiftUi`，删 `epgVersion`（9 个写入点逐点核过"同点必有其它 state 变化"）；③ 片 3 频道列表簇进 `LiveChannelListUi`，行列表推导降为纯函数 `LiveChannelRows`（只在展开集/锁定集变化时重算，`assertSame` 锁住"选中更新不动 rows"），删 `channelName`（合并进 `currentLiveChannelItem`）、`channelVersion`、`scrollTick`（→ `scrollRequestId`）；④ 片 4 设置簇进 `LiveSettingsUi`，`LiveSettingsSource` 收口 KV/ApiConfig/规则，快照由纯函数 `LiveSettingsSnapshot` 在开表/改设置/删历史时重算，删 `settingsVersion` 与 6 个组合期查询方法（组合期零 KV 读）；⑤ 片 5 外壳与控制器收敛：`LivePageFrame`/`LivePlayerUi`/`LiveOverlayUi` + `channelInfo`/`passwordDialogTarget` 进壳，18 个 facade 收成 `private`，`LiveScreen(state, actions)`（`collectAsStateWithLifecycle` 只在 `setContent` 一次），三个控制器改 `(vm, host, …)`（平台面收进 `liveHost` 组合匿名对象），控制器与外壳改 `lateinit` + `init()` 内构造（`by viewModels()` 在属性初始化期会抛 "not yet attached"）。
+
+**关键坑**：设置快照必须把标题/勾选/选中**拷进 UI 对象**，否则组合期仍在读可变 bean；`ChannelInfoSection` 的「回看中」徽标必须读切片（进回看时 `updateChannelInfoUi` 会因 `isSHIYI` 提前 return，靠 `channelInfoUi` 触发重组的写法会让徽标不出现）；组 6 的长按删除**不看** `lineMode`（仓模式仍要弹"不能单独删除"）；`liveSettingItems == null` 的组要整组不渲染。
+
+**验证**：`:app:assembleDebug` 绿、`:app:testDebugUnitTest` **794 例 / 0 失败**（新增 `LiveChannelRowsTest` 9 / `LivePlayViewModelChannelListTest` 7 / `LiveSettingsSnapshotTest` 12 / `LivePlayViewModelSettingsTest` 5 / `LivePlayUiStateTest` 5）；门脚本 `.codebuddy/tools/live_state_gate.py` **4/5**（判据 1 反射桥零、2 计数器与裸表达式零、3 组合期零 IO、5 Composable 签名零；判据 4 行数未达标，另立拆分项）；活规范 §6.2 与 §4.5 已改写 + `.codebuddy`/`.trae` 镜像同步。
+
+**待办**：真机走查（片 1–5 合并一次，判据见方案档 §5 六条 + 各片专项）；两个宿主文件按簇拆分（方案档 D10）。

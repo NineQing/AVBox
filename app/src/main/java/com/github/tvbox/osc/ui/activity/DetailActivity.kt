@@ -203,7 +203,11 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun ensurePlaying(): PlayContainer {
         val container = ensurePlayContainer()
-        if (!engineOwnsDetailContent()) playCurrent()
+        if (!engineOwnsDetailContent()) {
+            playCurrent()
+        } else {
+            container.ensurePlaybackActive()
+        }
         return container
     }
 

@@ -57,6 +57,8 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
     private var released: Boolean = false
 
     private var liveMode: Boolean = false
+    private var serviceLostKept: Boolean = false
+    private var serviceLostWasPlaying: Boolean = false
 
     private val idleRelease: Runnable = Runnable {
         if (released || liveMode || attachedPage() != null) return@Runnable
@@ -144,6 +146,8 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         controller.stopMusicSessionForFailedPlayback()
         PlaybackService.forceStopSession(appContext)
         liveMode = true
+        serviceLostKept = false
+        serviceLostWasPlaying = false
         setLiveFlag(true)
         cancelIdleRelease()
         LOG.i(TAG + " re-enter live state (after vod takeover)")
@@ -163,6 +167,8 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         val page = attachedPage()
         if (page != null) detach(page)
         liveMode = true
+        serviceLostKept = false
+        serviceLostWasPlaying = false
         setLiveFlag(true)
         cancelIdleRelease()
         releasePlayer()
@@ -226,17 +232,13 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         if (liveMode) exitLiveState()
         pageRef = WeakReference(page)
         if (!videoView.isPlaying) videoView.coverVideoFrame()
-        videoView.attachContainerTo(page.renderSlot())
         controller.setViewBridge(page.viewBridge())
-        // 音乐页会把渲染视图切成 TextureView，返回影视页必须还原成配置的渲染类型，
-        // 否则 alignInstanceConfigOnTakeover 会误判成渲染类型变更并白白重建内核。
-        // 基准用用户全局渲染设置：音乐页改的是渲染视图工厂（不可作基准），
-        // 而 controller.playerCfg() 在接管瞬间可能还是音乐页那份陈旧配置。
-        // 音乐页自身由 ensureAudioOnlyRender 统一切 Texture，这里无需先建一个 SurfaceView。
         if (!page.isAudioOnlyPage()) {
+            videoView.attachContainerTo(page.renderSlot())
             videoView.alignRenderViewToConfig(configuredRenderType())
         }
         cancelIdleRelease()
+        consumeServiceLostKeep(false)
         LOG.i(TAG + " attach page=" + page.hashCode() + " key=" + (session?.playbackKey() ?: "-"))
     }
 
@@ -325,6 +327,8 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
     fun release() {
         if (released) return
         released = true
+        serviceLostKept = false
+        serviceLostWasPlaying = false
         setLiveFlag(false)
         LOG.i(TAG + " engine release")
         val page = attachedPage()
@@ -335,6 +339,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         PlaybackService.forceStopSession(appContext)
         videoView.releaseController()
         videoView.setDanmuView(null)
+        videoView.detachContainerFromHost()
         videoView.release()
         controller.releaseFetch()
         controller.stopParse()
@@ -342,6 +347,40 @@ class PlaybackEngine(context: Context) : PlaybackHostApi {
         stateScope.cancel()
         main.removeCallbacksAndMessages(null)
     }
+
+    fun keepKernelAfterServiceDestroy() {
+        if (released) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post { keepKernelAfterServiceDestroy() }
+            return
+        }
+        if (liveMode || !prewarmEnabled()) {
+            LOG.i(TAG + " engine released (service destroyed, keep off)")
+            release()
+            PlaybackService.onEngineReleased(this@PlaybackEngine)
+            return
+        }
+        serviceLostKept = true
+        serviceLostWasPlaying = videoView.isPlaying
+        if (serviceLostWasPlaying) videoView.pause()
+        controller.stopParse()
+        controller.stopLoadWebView(true)
+        LOG.i(
+            TAG + " engine kept (service destroyed, page=" + (attachedPage() != null)
+                + ", playing=" + serviceLostWasPlaying + ")",
+        )
+    }
+
+    fun consumeServiceLostKeep(resumePlayback: Boolean) {
+        if (!serviceLostKept) return
+        serviceLostKept = false
+        val wasPlaying = serviceLostWasPlaying
+        serviceLostWasPlaying = false
+        if (resumePlayback && wasPlaying) videoView.resume()
+        controller.updateMusicSession()
+    }
+
+    fun isServiceLostKept(): Boolean = serviceLostKept
 
     private fun activeView(): PlaybackViewBridge {
         val page = attachedPage()

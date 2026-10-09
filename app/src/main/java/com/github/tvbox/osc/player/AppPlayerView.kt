@@ -167,7 +167,7 @@ open class AppPlayerView @JvmOverloads constructor(
     protected open fun addDisplay() {
         mRenderView?.let { render ->
             mPlayerContainer.removeView(render.getView())
-            mMediaPlayer?.clearDisplay()
+            mMediaPlayer?.detachVideoSurface()
             render.release()
         }
         val render = mRenderViewFactory.createRenderView(context)

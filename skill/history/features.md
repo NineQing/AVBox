@@ -4988,3 +4988,37 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **验证**：`:app:assembleDebug` 绿、`:app:testDebugUnitTest` **794 例 / 0 失败**（新增 `LiveChannelRowsTest` 9 / `LivePlayViewModelChannelListTest` 7 / `LiveSettingsSnapshotTest` 12 / `LivePlayViewModelSettingsTest` 5 / `LivePlayUiStateTest` 5）；门脚本 `.codebuddy/tools/live_state_gate.py` **4/5**（判据 1 反射桥零、2 计数器与裸表达式零、3 组合期零 IO、5 Composable 签名零；判据 4 行数未达标，另立拆分项）；活规范 §6.2 与 §4.5 已改写 + `.codebuddy`/`.trae` 镜像同步。
 
 **待办**：真机走查（片 1–5 合并一次，判据见方案档 §5 六条 + 各片专项）；两个宿主文件按簇拆分（方案档 D10）。
+
+## 2026-10-09｜音乐页往返后画面卡/黑数秒 + 两渲染模式播放报错（修复 + 音乐页方案反转）
+
+**现象（用户报告）**：surface 渲染 + 开调色/Anime4K 播放中进音乐播放页 → 退出 → 点播放进全屏，画面卡住/黑屏 4~10 秒后自愈（有声音）；改用 texture 渲染重走同一路径则**播放报错**（`Unexpected runtime error` → 自动重播）。
+
+**取证**：`files/preload_debug.log` + `logcat`。①"卡住"= 帧心跳空洞 4~10s，空洞期系统 GL 层 `EglImage dataspace changed` **0 条**（恢复瞬间 21 条）⇒ 视频管线真停着；②报错栈 = `MediaCodecVideoRenderer.handleMessage:1285 → Preconditions.checkNotNull` ⇒ 两条路径都是"输出面尺寸信令抢跑（空输出面）"。
+
+**根因与修法**：
+1. **音乐页停视频解码**（`setAudioOnlyMode` → 禁用视频渲染器 + 切 TextureView + 容器搬进 1x1 `renderSlot`）⇒ 退出时渲染器重建、解码器从当前位置继续但未对齐关键帧，只能干等下一个 I 帧（4~10s）。**修法（用户拍板）= 音乐页不再停解码、容器不再搬进 1x1 槽位**：`setMusicAudioOnly` 只维护标志；`ensureAudioOnlyRender` 删"音乐页强制切 Texture"分支（纯音频仍切，2026-09-13 洞穿修复保留）；`PlaybackEngine.attach` 对音乐页跳过 `attachContainerTo`。
+2. **输出面尺寸信令抢跑** ⇒ media3 对空输出面 `checkNotNull` 打 NPE。**修法（双层）**：`PlayerEngine` 新增 `outputSurfacePresent`（与 `videoOutputInvalid` 解耦——后者语义是"渲染器禁用"，`detachVideoSurface()` 刻意不置它）+ 面未就绪时记账、`setVideoSurface(有效)` 后补发；`ReplayableCacheVideoRenderer.handleMessage` 对空面消息兜底丢弃（日志 `drop output-size (surface null)`）。
+
+**验证**：`assembleDebug` 绿、`testDebugUnitTest` **794 例 / 0 失败**（1 skipped）。装机实测（NPE 修复与补发机制）：音乐页往返不再有 `player-error`，`drop output-size (surface null)` 与 `surfacePresent=false → true` 补发按预期命中。**待真机走查**：surface / texture 各走一遍音乐页往返（预期退出零 `codec-init`）；纯音频源进音乐页仍应 `create TextureView`、退后台快照不变白；听歌期间多耗一点电属预期代价。
+
+**文档**：`avbox-playback-service-spec.md` §3.8（取消"音乐页例外"、新增"输出面尺寸信令必须晚于输出面设置"）+ §7.4 两行 + §8 修订记录；`.codebuddy` / `.trae` 两镜像同步。
+
+## 2026-10-09｜服务被系统回收导致内核丢失（按预热开关决定保留，含两轮审查修复；用户拍板）
+
+**现象（用户报告）**：暂停态退后台约 40 秒再回前台，视频重新缓冲。用户追问"要不要把内核复用也做到这个场景、会不会打回已修的 bug"。
+
+**取证**：`files/preload_debug.log`。13:44:53 退后台 → **13:45:16 `echo-p2 host onDestroy`**（服务被系统回收；日志文件时间连续 ⇒ 进程活着、排除进程被杀）→ 13:45:35 `echo-p2 engine create` → 13:45:36 `codec-init`。同期日志有 `idle release suppressed: kernel prewarm on` ⇒ **用户开着内核预热**：detach 路径本就不释放内核，唯独"服务回收"这条 `onDestroy → releaseEngine()` 无视预热强杀，语义自相矛盾。
+
+**修法（终版，六条）**：
+1. `PlaybackService.onDestroy` 不再无条件 `releaseEngine()`，停会话后调 `PlaybackEngine.keepKernelAfterServiceDestroy()`；轻量清理**仅** `stopParse()` + `stopLoadWebView(true)`（WebView 有懒重建）—— `releaseFetch()`/`destroyPreload()` **刻意不调**（二者无重建路径，只有 `PlaybackEngine.init` 会 `initFetch`/`initPreload`，调了会让回前台起播的取流结果无处投递、预载永久失效）；也不调 `page.onServiceStopped()`、不清 `sessionFlags`（否则页面会放弃活引擎引用）；`PlaybackService.updateSession` 遇 `isServiceLostKept()` 跳过：防 `pause()` 派发的状态更新把刚被回收的服务**反向拉起**（Android 12+ 抛 FGS 异常 / 留下 `pendingStart`）；
+2. **总闸 = 预热开关**（与空闲释放同口径）：预热关或直播态 `liveMode` ⇒ 完整释放（日志 `engine released (service destroyed, keep off)`）；预热开 ⇒ 保留内核。原"15 分钟兜底计时"经审查后**整体删除**（会在页面存活时释放引擎、音乐页无复活入口；回收改由页面 `detach`→60s 空闲收敛）；保留前**先 `pause()`**（否则服务已撤通知却仍出声），恢复点记在 `serviceLostWasPlaying`；
+3. `onTaskRemoved`（划掉任务）置标志，`onDestroy` 走 `releaseEngine()` **完整释放**（取证 `engine released (task removed)`），与"系统回收"区分；
+4. 页面回来调 `consumeServiceLostKeep(resumePlayback)`（`PlayContainer.hostResume` 传 `ownsEngineContent()`、音乐页 `MusicHost.hostResume` 传 `true`）：复位标记 + 按需恢复被停播放 + 触发一次会话更新让服务/通知重建（回前台那次 `session update with no live service` 属**预期**）；新页面 `attach` 也清标记但**不**恢复播放；`enterLiveState()`/`release()` 一并清标记；`PlayContainer.hostResume` 中该调用排在"重建渲染视图"**之后**（先换面、后起播）。
+
+**审查轮（两轮子代理只读审查 + 复核）**：第一轮 1 高 4 中全部闭合 —— 高 = `pause()` 反向拉起服务（由修法 1 的 `updateSession` 守卫闭合）；中 = live 被冻结且计时失效、兜底计时造成"页面存活时释放引擎且音乐页无复活入口"、标志复位时机、恢复播放无所有权校验（分别由修法 2/3/4 闭合）。第二轮 3 中 + 1 中待证 —— ① §4-19 判据与实现冲突（回前台那次 `session update with no live service` 是预期）→ 已改判据；② `attach` 与 `hostResume` 双消费者顺序耦合 → 复核判定**伪问题**（`reattachIfOwnedByOther` 在 `attachedPage() === this` 时早退，仅"引擎被别的页面接管"才 attach，那时本不应恢复播放）；③ `enterLive*` 漏清标记 → 已修；④ 恢复播放排在"重建渲染视图"之前 → 已交换为"先换面、后起播"。剩余低项（`pendingStart` 残留致通知一闪[既有]、`onEngineReleased` 日志措辞、`updateMusicSession` 所有权、非主线程分支）登记不修。第三轮（收尾判定）：**无阻断/无高**；1 条中级为**既有**（预热关 + 服务回收时音乐页无引擎复活入口，`onServiceStopped` 仅撤回调）→ 转文档已知限制（§4-19 / R10）；顺带补 `enterLive()` 清标记（与 `enterLiveState()` 对称）；其余低项登记（同帧双换渲染面[既有]、`PlaybackEngine.hostResume` 死代码[既有]、保留态回前台"新建 Surface→`surfaceCreated`"窗口内起播的真机首帧确认）。
+
+**实施前审查（对照已修 bug）**：① 离屏层黑屏修复（`rebuildRenderViewAfterBackground` 守卫 `view.mediaPlayer == null`）——内核保留后守卫不成立，重建视图**照常执行且比现状更完整**；② 残留容器（`release()` 内 `detachContainerFromHost`）——保留内核时不触发该路径；③ 画面开关旧效果链（`requireKernelRebuild` 判定独立于内核存活期）。三条均**不受影响**；无 Activity 泄漏（引擎内部统一 `applicationContext`、`pageRef` 是 `WeakReference`、视图用 `ContextThemeWrapper(appContext)` 创建）。
+
+**验证**：`assembleDebug` 绿、`testDebugUnitTest` **794 例 / 0 失败**；已装机。**待真机走查**（§4-19）：预热开时暂停态退后台等 `host onDestroy` → 回前台直接续播、无 `engine create`/`codec-init`、且 `session update with no live service` **恰好一次**（回前台那次属预期）；预热关同一路径见 `engine released (service destroyed, keep off)`；划掉任务见 `engine released (task removed)`。
+
+**文档**：`avbox-playback-service-spec.md` §1 + §3.3「服务被系统回收时的内核去留」+ §4-19 + R10 + §8；`.codebuddy` / `.trae` 两镜像已同步。

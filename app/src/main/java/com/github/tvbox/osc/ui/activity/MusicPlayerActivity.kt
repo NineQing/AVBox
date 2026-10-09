@@ -459,6 +459,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         override fun onLocalSubtitlePicked(uri: Uri) {}
 
         override fun hostResume() {
+            engine.consumeServiceLostKeep(true)
             if (lifecyclePaused) {
                 lifecyclePaused = false
                 player.resume()

@@ -454,7 +454,7 @@
     <string name="settings_about_disclaimer">This app only aggregates and displays content from the internet. It does not host, create, upload, store, or download any content, and accepts no donations, tips, or payments. It is provided for open-source learning purposes only; please uninstall it within 24 hours of installation.\n\nKeep the credits when redistributing\nhttps://github.com/CatVodTVOfficial/TVBoxOSC\nhttps://github.com/q215613905/TVBoxOS</string>
     <string name="settings_github">Visit GitHub Repository</string>
     <string name="settings_github_subtitle">Open the project source repository</string>
-    <string name="settings_app_tagline">TVBox for Phone</string>
+    <string name="settings_app_tagline">Open-source video player</string>
     <string name="settings_app_version">App version</string>
 
     <string name="settings_preference_title">Preferences</string>

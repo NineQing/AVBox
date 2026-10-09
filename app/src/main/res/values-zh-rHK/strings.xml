@@ -42,6 +42,7 @@
     <string name="settings_search_threads">搜尋線程</string>
     <string name="settings_github">訪問 GitHub 儲存庫</string>
     <string name="settings_github_subtitle">訪問項目原始碼儲存庫</string>
+    <string name="settings_app_tagline">一款開源的視頻播放器</string>
     <string name="player_rotate_portrait">旋轉到縱向</string>
     <string name="toast_local_config_read_failed">讀取本地設定失敗</string>
     <string name="toast_local_source_unreadable">本地源檔案讀不到\n請開啟「所有檔案存取」後重試（或重新匯入本地源）</string>

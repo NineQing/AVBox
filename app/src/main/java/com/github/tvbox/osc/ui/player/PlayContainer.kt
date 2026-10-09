@@ -8,6 +8,7 @@ import android.os.Looper
 import android.text.TextUtils
 import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.FrameLayout
@@ -75,6 +76,8 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
 
     private var videoSizeReadyListener: ((Boolean) -> Unit)? = null
 
+    private var touchBlocked = false
+
     private var lifecyclePaused: Boolean = false
     private var ownedPlaybackKey: String? = null
     private var handedOver: Boolean = false
@@ -141,6 +144,13 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     fun setVideoSizeReadyListener(listener: ((Boolean) -> Unit)?) {
         videoSizeReadyListener = listener
     }
+
+    fun setTouchBlocked(blocked: Boolean) {
+        touchBlocked = blocked
+    }
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean =
+        touchBlocked || super.onInterceptTouchEvent(ev)
 
     private fun notifyVideoSizeReady(portraitVideo: Boolean) {
         val deliver = Runnable {

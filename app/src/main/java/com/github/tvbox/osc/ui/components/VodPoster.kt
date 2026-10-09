@@ -26,6 +26,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
+import coil3.request.crossfade
 import coil3.request.transitionFactory
 import coil3.transition.Transition
 
@@ -79,15 +80,35 @@ internal fun VodPoster(
         mutableStateOf(if (preferLarge) VodImages.largePosterUrl(pic) else pic)
     }
     val context = LocalPlatformContext.current
-    val request = remember(context, posterUrl) {
+    val request = remember(context, posterUrl, preferLarge) {
         ImageRequest.Builder(context)
             .data(posterUrl)
+            .apply {
+                if (preferLarge) crossfade(true) else transitionFactory(Transition.Factory.NONE)
+            }
+            .build()
+    }
+    val baseRequest = remember(context, pic) {
+        ImageRequest.Builder(context)
+            .data(pic)
             .transitionFactory(Transition.Factory.NONE)
             .build()
     }
+    val baseUnderlay = preferLarge && !pic.isNullOrEmpty() && posterUrl != pic && !showFallback
 
     Box(modifier = modifier) {
         if (showFallback) PosterFallback(name)
+        if (baseUnderlay) {
+            AsyncImage(
+                model = baseRequest,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                onState = { state ->
+                    if (state is AsyncImagePainter.State.Success) onImage?.invoke(state.result.image)
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         AsyncImage(
             model = request,
             contentDescription = name,

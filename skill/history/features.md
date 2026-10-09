@@ -5059,3 +5059,97 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 - **文档判据修 3 处（第二轮主要产出，均为本轮自己写错）**：① §3.9 "自动地址一律在 `goPlayUrl` 被拦"收窄 —— 净化**启动**分支与无页面 `HeadlessView` / 音乐页桥的交付不经 `goPlayUrl`（投屏窗口内页面必在 ⇒ 不可达，登记为脆弱点）；② §4-20 删掉"伴随 `echo-resolvePlayUrl timeout` / `echo-autoRetry`"——收摊（刀 C）已取消 15s/20s 定时器、drop 闸门又在重试入口之前，这些行**不应**出现；③ `echo-goPlayUrl:` 判据改为"其后不得有起播证据（`echo-setDataSource` / `codec-init`）"——它打在入口判定之前，竞态下会与 `drop late play url` 同时出现。另：§4.4（UI 活规范）补 §3.9 交叉引用、`SKILL.md` 文档地图 §4 编号补 19/20、方案档 §7.3 判据改写。
 - **登记不修（低）**：错误浮层的"重试"入口与自动重试共用方法被一并拦（有播放胶囊/刷新/画质三条替代路径）；净化启动/无页面交付不在拦截面；三处 drop 分支附带的提示与会话收摊；`clearCastAbort()` 不作废在途净化交付；`PlaybackFetch.handlePlayResult` 不在拦截面；无静态判据守"起播入口必清"；`.codebuddy/skills/android/features.md` 是 `history/features.md` 的多余顶层副本。
 - **验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **800 例 / 0 失败**。
+
+## 2026-10-09｜进播放改为「默认竖屏 + 播放器右滑入」（旋转方案弃用后的替代设计）
+
+**背景**：当日两版"整页旋转"尝试（复用系统 rotating / 应用内自绘）均被用户回退后，用户提出新方向："点击全屏后默认进入竖屏播放，播放器从右向左滑出，像系统 activity 转场"。选「同 Activity 内滑入」路线。
+
+**关键判断（修正早前结论）**：早前判断"SurfaceView 不参与 View 层动画"只对 **alpha / 缩放 / 旋转**成立；**纯平移会跟随**（Android 7+ surface 位置由 View 位置驱动）⇒ 用**布局偏移**（`Modifier.offset`）而不是 `graphicsLayer`，视频画面就能跟着滑入，无需切 TextureView、也无需独立 Activity/Dialog 窗口。
+
+**实现**
+1. **方向改默认竖屏**：`applyFullscreen` 只设 `orientationPolicyValue()`（手机 = 锁竖屏），删掉"按片源转横屏"与"尺寸监听纠正"整链（`DetailActivity` 的 `applyPlaybackOrientation`/`armVideoSizeWatch`/`onVideoSizeReady`/`videoSizeTimeoutRunnable`/`VIDEO_SIZE_WATCH_TIMEOUT_MS` + `DetailPlaybackOrientation` 对象 + 其测试文件）；容器侧随之无用的 `setVideoSizeReadyListener`/`notifyVideoSizeReady` 与 `ComposeVideoController.onVideoSizeReady` 一并删除（含两个 import）。横屏片源在竖屏里按比例适配，用户可用播放器自带旋转按钮手动转（`PlayerActionsDelegate.onRotateClicked` 直接改 `requestedOrientation`，与本次改动无耦合）。
+2. **播放器层提升为覆盖层 + 右滑入**：`DetailScreen` 结构从 `Column { 播放器盒子(0 高度/全屏) ; 内容 }` 改为「背景 → 内容层（可左移）→ 播放器覆盖层（可右移）→ 拦截层」；滑入用 `Modifier.offset { }`、300ms `FastOutSlowInEasing`，海报内容同步左移 20%；播放器层在非全屏时停在右侧屏外（容器保持全尺寸 ⇒ 起播与滑入并行、落位即出画，且**不改尺寸** ⇒ 不触发渲染面重建）。
+3. **状态与边界**：VM 新增 `enteringFullscreen`；滑入结束 `onEntrySlideFinished()` → `fullScreen = true` 切第二张脸；滑入期加交互拦截层；返回键 = `cancelEntrySlide()` + `stopForExitFullscreen()`（停播保内核）。`DetailPlaybackPolicy`、三条进播放的路、退全屏语义均不变（`rotating` 仅剩退全屏在用）。
+
+**验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **797 例 / 0 失败**（删除的 `DetailPlaybackOrientationTest` 3 例中 2 例与 `DetailPlaybackCommandsTest` 同构；1 例"尺寸未就绪 ⇒ 保持竖屏"**无等价覆盖**，该语义现由 `armVideoSizeWatch` 早退分支承担、无常驻单测）。设备未在线，未装机。
+
+**审查轮修复（同日；两路子代理只读审查 + 逐条复核）**
+- **真回归（已修）**：① **全屏内换集重放滑入** —— 播放器底栏「选集」→ 面板点集 → `applyPlaybackEntry(Episode)` → `enterFullscreen()` 缺"已在全屏"守卫，播放器被拽出屏外再滑回 300ms（改动前 `fullScreen.value = true` 是幂等的）；修法 = `enterFullscreen()` 加 `if (fullScreen.value || enteringFullscreen.value) return`。② **幻影全屏** —— `onEntrySlideFinished()` 无状态校验，与"滑入中取消"同帧时会把 `fullScreen` 置 true、停在"伪全屏 + 已停播"；修法 = 加 `if (!enteringFullscreen.value || exitingFullscreen.value) return`。③ **横屏退全屏露空底** —— `rotating=true` ⇒ `fullBox=true` ⇒ 海报内容层整层不渲染，滑出只揭开模糊底；修法 = 内容层与 TopScrim 可见条件改 `!fullBox || exitingFullscreen`。④ **滑出与方向切换并发致位移跳变** —— `slideWidth` 实时读 `LocalConfiguration`，系统旋转落地时按新宽度重算；修法 = 转场开始时快照宽度（`slideWidthDp`）。⑤ **退全屏未清尺寸 watch**（跨会话残留 listener/定时器，且 `if (videoSizeWatchArmed) return` 会静默跳过重新武装、10s 预算不刷新）—— 修法 = `applyFullscreen(false)` 里一起清 armed/listener/定时器。⑥ 退出入口加守卫：`onFullScreenToggleRequested(false, …)` 在"既不在全屏也不在滑入"时直接 return（收掉 `onNewIntent` 于海报页的无效退全屏路径）。
+- **驳回**：审查提出"滑入期 D-pad/键事件不被拦截" —— 本项目只面向手机用户、无遥控器输入，不适用。
+- **登记不修（低）**：滑入 300ms 内播放器仍是预览 chrome、落位帧才切全屏 chrome（用户走查已接受）；拦截层覆盖不到播放器原生 View 与选集面板（面板仅在全屏态打开，而全屏态已不再触发滑入，影响面收敛）；后台暂停期间尺寸回调仍可下方向（语义仍正确）；返回键三分支读"VM flag / Activity 字段 / VM flow"三个来源、存在 1 帧错判窗口（既有架构）；`DetailPlaybackFacts.portraitVideo` 在生产路径已成死值、其单测锁的是 `requested=true` 不可达分支；平板落位后仍会被硬转横屏（沿袭旧实现，已在 §4.4 标注）。
+- **验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **797 例 / 0 失败**。
+
+## 2026-10-10｜进播放过渡·第二轮审查修复（双真自锁 + 平板横屏退全屏空白）
+
+**触发**：用户要求"再审查一遍"。上一轮 6 处修复**未经真机验证**，本轮把它们本身当审查对象，并专扫真机未验的旁路与盲区（两路只读子代理 + 逐条复核）。
+
+**修掉 5 项（2 高 / 2 中 / 1 低，其中 2 项高被两路独立命中）**
+1. **`entering && exiting` 双真自锁（高；上一轮修复引入的回归）**：滑入中收到 `onNewIntent`（或滑出中点选集）→ 两 flag 同真 → `when` 里 entering 优先使 exiting 分支饿死、`onEntrySlideFinished` 又被守卫拦下且不清 entering ⇒ `slideAnim` 停在 1、拦截层常驻、`fullScreen=false`：播放器压住海报页且海报页全不可点，只能靠返回键脱出。修法 = **三处入口互斥收敛**（置 `exiting` 前清 `entering`、置 `entering` 前清 `exiting`、`onEntrySlideFinished` 先清 `entering` 再按 `exiting` 决定落位）+ `when` 改 **exiting 优先** + 进入分支去掉 `snapTo(0f)`（滑出中途再进入从当前进度续滑）。
+2. **≥600dp 设备横屏退全屏后内容层永久不渲染（高）**：`rotating` 只能被 `onConfigurationChanged` 清除，平板 `orientationPolicyValue()` = `UNSPECIFIED`、退全屏不产生配置变更 ⇒ `rotating` 永真 ⇒ `fullBox=true` 且播放器已滑出屏外 ⇒ 只剩模糊底。修法 = 滑出结束调 `DetailActivity.settleRotationAfterExit()`（清 `rotating` + `syncFullBoxSideEffects`，幂等；手机仍走既有 `onConfigurationChanged` 自愈）。
+3. **拦截层挡不住播放器原生 View（中）**：过渡 300ms 内点到播放器 = 直接触发手势（单击切控制栏、双击暂停、横滑 seek）。修法 = `PlayContainer.setTouchBlocked()` + 覆写 `onInterceptTouchEvent`，`LaunchedEffect(touchBlocked, container)` 跟随两 flag（异常路径随 flag 回收，不漏解锁）。
+4. **静止态快照不跟随窗口（中）**：平板转屏/分屏后播放器偏移量小于当前窗宽、停在屏内压住海报页。修法 = `LaunchedEffect(configuration.screenWidthDp)` 在非转场态刷新快照。
+5. **滑出中连按两次返回会直接离页（低）**：第二次落进 else 分支 → `backToPreviousTarget()`/`finish()`。修法 = `exiting` 期间吞掉返回。
+
+**登记不修（本轮新增）**：未声明配置变更（深色/字体/分屏/语言）会重建 Activity ⇒ 过渡丢失或重播、全屏态重建重新起播（既有；补 `configChanges` 会牵动全局主题响应，不在收尾轮做）；过渡中用户自己转屏导致快照语义失效；会话内换集方向不回转（`applyVideoOrientation` 单向）+ `armVideoSizeWatch` 早退分支沿用旧尺寸判方向；画质 chip 命令极端下可能被静默丢弃（今天不可达）；海报页常驻"满屏但在屏外"容器 ⇒ 真机看有无闪黑/黑边。
+
+**已核无问题**：LazyColumn/Coil 不抖动不重载；播放器层不遮挡海报页；音乐交接/投屏/rollback 无并发面；动画协程取消安全；三入口 plan 一致。
+
+**验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **797 例 / 0 失败**。设备未在线，未装机。
+
+**待真机走查（第二轮新增）**：① 滑入中切内容 / 滑出中点选集 → 不再"播放器压住海报页且全不可点"；② 平板/大屏（≥600dp）横屏退全屏 → 海报页正常出现；③ 过渡 300ms 内点播放器区域不触发暂停/seek；④ 过渡中连按返回不直接离页。
+
+**文档**：`skill/review/review-20261010-detail-entry-slide.md` 追加"第二轮审查"；规范 §4.4 该条补 ④ 状态互斥与兜底；`.codebuddy` / `.trae` 两镜像同步。
+
+## 2026-10-10｜进播放过渡·第三轮审查修复（状态机收进纯函数 + 两套形态判定定稿 + 宽度基准改实测）
+
+**触发**：用户按规范判定"连续两轮都有高，还不能收尾"（终止线 = 连续一轮无阻断/高/中）。本轮两路只读子代理换角度：① 状态机穷举 + 全量对账；② 规范↔实现逐句对账 + 测试缺口 + Compose/协程 + 重复代码。结论：**无阻断、无高，共 5 条中**（另有若干低/既有）。
+
+**修掉（5 中 + 3 低）**
+1. **`exiting` 无兜底出口（中）**：`settleRotationAfterExit()` 排在清 VM flag **之前**，它若抛异常则 `onExitSlideFinished()` 永不执行 ⇒ `exiting` 永真（返回键被吞 + 拦截层常驻 + 播放器触摸锁 = 无用户出口）。修法 = **先清 VM flag 再 settle** + `try/finally`；**滑入分支起始也调 `settleRotationAfterExit()`**（顺带修"滑出被重进打断 ⇒ `rotating` 残留 ⇒ 全屏态被按预览态处理"）。
+2. **`fullBox` 两份手写实现（中）**：`DetailScreen` 与 `DetailActivity.isFullBox()` 各自手写、旋转窗口取值相反。复核结论 = 两处语义本就不同（内容可见性 vs 播放器全屏形态），**故意相反、不可统一**（统一会让正常退全屏的滑出 300ms 内落成全屏 chrome）。修法 = 抽 `DetailFullScreenFrame.fullBox` / `playerFullScreen` 两个纯函数 + `DetailFullScreenFrameTest` 锁"故意相反"。
+3. **判据表死分支（中）**：`fullScreenState(requested=true, …)` 与 `facts.portraitVideo` 自 2026-10-09 起生产不可达（进入方向已归 `armVideoSizeWatch`），4 个单测锁的正是死语义。修法 = 收敛为 `DetailPlaybackCommands.exitFullScreenState(facts)`（`false to facts.landscape`），删 `portraitVideo` 字段与进入用例。
+4. **滑移基准与旋转叠加（中）**：`slideWidthDp` 快照在"转场中旋转落位/分屏改宽"时永久失配（播放器停在屏内压住海报页、海报位移 20%→44%）。修法 = **改实测宽度**（根 Box `onSizeChanged` 写 `slideWidthPx`，两处 `offset` 直读）—— 一并消掉"静止态快照不跟随""宽度 key 已消耗"两条登记。
+5. **本轮判定零单测（中）**：`entering/exiting` 全部转换收进纯函数表 `DetailFullScreenSlide`（`enter`/`exit`/`cancelEntry`/`entryFinished`/`exitFinished`，返回新态或 null=拒绝），VM 只做"取态→过表→写回"；`DetailFullScreenSlideTest` 穷举 8 态 × 5 转换 + 互斥不变量。
+6. **低项**：抽 `inTransition`（4 处重复）与 `slideProgress()`（2 处重复公式）；`cancelEntrySlide()` 加幂等守卫；`onConfigurationChanged` 改直调 `settleRotationAfterExit()`（消两行同体）。
+
+**附录 A 度量盘点（本轮补出）**：`DetailViewModel.kt` 1010 行 / `PlayContainer.kt` 821 行（文件 >500 阈值；既有上帝类）；`DetailScreen()` 顶层 Composable 222 行（方法 >100 阈值，本次改动持续增厚）；`entering||exiting` 同文件重复 4 次（本轮已抽）。
+
+**验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **805 例 / 0 失败**（797 → 805：删 6 例死语义、增 14 例）。设备未在线未装机。
+
+**结论**：本轮仍有"中"⇒ 按终止线**不可收尾**，需第四轮复核（换角度：本轮修复自身的副作用 + 尚未覆盖的维度）。
+
+## 2026-10-10｜我的页应用信息卡：AVBox → AudioVideoBox，删除标语
+
+**需求**：用户给出截图 ——"我的"页顶部应用信息卡标题 `AVBox` 改为 `AudioVideoBox`，并删除下方副标题「TVBox手机版」。
+
+**改动**：`ui/page/SettingsAppInfoCard.kt` —— 标题硬编码字符串改 `AudioVideoBox`（纯 ASCII 品牌名，不涉 i18n 硬编码闸门）；删除标语 `Text`（保留 `Column(Modifier.weight(1f))` 包装，标题仍不被徽章挤压）；三语资源 `settings_app_tagline`（`values` / `values-en` / `values-b+zh+Hant`，香港走 `b+zh+Hant` 继承）随之清理。未动 `app_name`（仍 AVBox）与投屏提示里的 AVBox 文案。
+
+**同日追加（用户报"目前字体多大"后按截图微调）**：标题加 `fontSize` **局部覆盖** —— 库默认 28sp（`Type.kt` 未覆盖该级）→ 26sp → **终值 24sp**；**26sp 时实测截图标题折行**（卡内可用宽约 184dp，13 字符放不下），24sp 装机复验为**单行** ✓。只改这一行，`Type.kt` 与其它 `headlineMedium` 消费点不动。
+
+**再追加**：版本胶囊内的版本值由 `titleLarge`(18sp) 局部覆盖 `fontSize = 16.sp`（截图观感偏大；标签「应用版本」保持 `bodyMedium` 14sp 不动）。
+
+**验证**：`i18n_check_keys.py` 复核 `UNUSED: []`、声明/引用 544/544 一致；`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **805 例 / 0 失败**。设备未在线未装机。
+
+**文档**：规范「顶部应用信息卡」条目同步改版说明；`.codebuddy` / `.trae` 两镜像同步。
+
+**待真机走查**：① 点播放 → 播放器从右滑入、海报页左移让位、落位即出画；② 进全屏后是**竖屏**播放（横屏片源上下黑边）；③ 播放器旋转按钮能手动转横屏、退全屏后方向恢复竖屏；④ 滑入期点返回 = 回海报页且停播保内核；⑤ 画质 chip / 选集入口行为一致。
+
+**文档**：`avbox-mobile-ui-spec.md` §4.4 新增「进播放 = 默认竖屏 + 播放器右滑入」条；`.codebuddy` / `.trae` 两镜像同步。
+
+**补充（同日，用户定稿后第二批）**
+1. **退全屏也做反向滑出**：新增 VM `exitingFullscreen`（退全屏入口 `onFullScreenToggleRequested(false, …)` 置位），`DetailScreen` 的进度值改为"进入 0→1 / 退出 1→0"，播放器右滑出 + 海报页从 20% 左偏滑回（300ms 同曲线）；进度值在全屏态停在 1、非全屏态停在 0（不再每次 `snapTo(0)`）；滑入中按返回 = `cancelEntrySlide()`（转入反向滑出）+ `stopForExitFullscreen()`；拦截层条件扩为 `enteringFullscreen || exitingFullscreen`。
+2. **方向定为 b（竖屏进入 + 落位后横屏片源自动转横屏）**：把上一批删掉的"尺寸监听"链恢复并**改语义**（`PlayContainer.setVideoSizeReadyListener`/`notifyVideoSizeReady`、`ComposeVideoController.onVideoSizeReady`、`DetailActivity` 的 `armVideoSizeWatch`/`onVideoSizeReady`），新 `applyVideoOrientation` **只在片源是横屏时**转 `SENSOR_LANDSCAPE`（竖屏片源保持竖屏）；容器已有尺寸则立即判、否则监听首次尺寸（10s 超时 + 防重复 arm）；用户手动旋转仍有效且不会被二次覆盖（监听一次即清）。`VideoOrientation.isUsableSize` 因复用该链而不再是死代码。
+
+**验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **797 例 / 0 失败**。设备未在线，未装机。
+
+## 2026-10-10｜我的页应用信息卡：恢复副标题「一款开源的视频播放器」
+
+**需求**：在应用名 `AudioVideoBox` 下方加副标题「一款开源的视频播放器」（当日早些时候刚按要求删掉旧标语「TVBox手机版」，本次按新文案恢复该行）。
+
+**改动**：`ui/page/SettingsAppInfoCard.kt` —— 标题 `Column` 内恢复副标题 `Text`：`R.string.settings_app_tagline`，样式 `bodyMedium` + `onPrimaryContainer` 75% alpha。样式选 14sp 而非旧标语的 `bodyLarge`（16sp）：新文案更长（中文 10 字 / 英文 25 字符），按标题列 ~184dp 可用宽推算，16sp 下英文 ≈205dp 必折行、中文 ≈160dp 余量仅 24dp；14sp 下英文 ≈160dp / 中文 ≈140dp，单行安全。
+
+**四语资源**（`settings_app_tagline` 按新文案重写）：`values`「一款开源的视频播放器」/ `values-en`「Open-source video player」（无冠词短标语控宽）/ `values-b+zh+Hant`「一款開源的影片播放器」（台湾用「影片」，与 `player_error_play`「影片播放」同口径）/ `values-zh-rHK`「一款開源的視頻播放器」（港层新增差异条目，用「視頻」，对齐 `player_menu_video_track`「視頻軌」）。
+
+**验证**：`:app:assembleDebug` 绿；`i18n_gate` ui 层 0 处（非 ui 37 处为既有登记项，本次未新增）；`i18n_check_keys` declared=referenced=545、无 UNUSED / 无 REFERENCED-BUT-NOT-DECLARED；`i18n_align` en 545=545 PASS、b+zh+Hant 545=545 PASS（S2T 提示仅语言名 endonym）、zh-rHK 子集 75 条 PASS（新增条目无 REDUNDANT 判）。**未装机**，真机走查（英文单行 / 深色、纯黑主题）待做。
+
+**文档**：规范 §4.3「顶部应用信息卡」条目同步；`.codebuddy` / `.trae` 两镜像同步。

@@ -5022,3 +5022,40 @@ new-instance v2, Lorg/json/JSONArray;  invoke-direct {v2, v1}      # new JSONArr
 **验证**：`assembleDebug` 绿、`testDebugUnitTest` **794 例 / 0 失败**；已装机。**待真机走查**（§4-19）：预热开时暂停态退后台等 `host onDestroy` → 回前台直接续播、无 `engine create`/`codec-init`、且 `session update with no live service` **恰好一次**（回前台那次属预期）；预热关同一路径见 `engine released (service destroyed, keep off)`；划掉任务见 `engine released (task removed)`。
 
 **文档**：`avbox-playback-service-spec.md` §1 + §3.3「服务被系统回收时的内核去留」+ §4-19 + R10 + §8；`.codebuddy` / `.trae` 两镜像已同步。
+
+## 2026-10-09｜投屏「只解析」加固（castAborted：收摊后迟到地址与自动重试一律拒绝）
+
+**触发**：用户报告"影视海报页点投屏，有概率出现该资源的声音"（当日无法复现，属预防性加固）。方案档 `文档/cast-resolve-only-hardening-plan.md`（本地不入库）。
+
+**窗口分析（静态）**：投屏等待窗口只有 5 秒（250ms × 20 轮询），超时即 `endCastPrepare()` 撤掉唯一门禁 `castPrepareOnly`；而解析超时（15s）/起播超时（20s）定时器**不随之取消**，已启动的 M3U8 净化也可能晚于收摊交付 ⇒ 四条漏声链：W1 15s 解析超时 → `tryNextLine` → 重新解析起播；W2 迟到解析失败 → 同族换线；W3 20s 起播超时 → `autoRetry`（嗅探 / 原样重播 / 软解 / 重解析）；W4 净化完成晚于收摊 → 此时 `goPlayUrl` 的门禁已被撤。形态 = 详情页未进全屏、容器 0 高 ⇒ **有声无画**。
+
+**修法（三刀，全部落地）**
+
+1. **刀 A｜会话级 `castAborted`**：`PlaybackAttemptState.castAborted`（**置位点唯一** = `PlaybackController.closeCastPrepare()`，含"正常拿到地址"那一次）；`PlaybackStarter.goPlayUrl` 丢弃迟到地址（入口 + UI Runnable 内各一次，后者堵"入口判定通过后收摊"的竞态，与同处 `switchStopPending` 守卫同因），两处都 `cancelPlayTimeout()` 防定时器补枪；清除点 = `PlaybackAttemptState.beginSession()`（每轮 `setData` 必经，放状态类里保证不漏）+ 用户起播漏斗（`DetailActivity.playCurrent()`、`PlayContainer.ensurePlaybackActive()` —— 护住"同片续播 / 音乐入口不走 `setData`"的路径）。
+2. **刀 B｜自动重试入口统一"只提示不重试"**：`PlaybackRetryDelegate.dropRetryIfCastAborted(reason)`（`cancelPlayRequest` + `stopParse` + `cancelPlayTimeout`）接入 5 个入口 —— `handleResolvePlayUrlTimeout` / `handleResolvePlayUrlFailed` / `handleSwitchLinePlayTimeout` / `autoRetry` + **`retryAfterStartedError`**（计划外第 5 个：音乐页 `MusicSessionDelegate` 与错误浮层 `errorWithRetry` 也会自动调它，不拦就是新窗口）；`tryNextLine` / `retryWithFreshResolve` / `trySoftDecodeFallback` 在 `autoRetry` 下游自然覆盖。
+3. **刀 C｜收摊补齐定时器取消**：`PlayContainer.endCastPrepare()` 补 `scheduler.cancelPlayTimeout()`（此前只有 `abortIfCastPrepare` 那条有）。
+
+**刻意不做**：① 不用 gen 值比对 —— `startSession()` 每轮 `resetGen()`，某一轮涨到同值会误丢正常起播；② 不在 `beginNewPlay()` / `stoppedForSourceSwitch()` 清标记 —— 自动重试会走这些同会话复位路径，清了等于开门（`PlaybackCastAbortStateTest` 锁住该不变量）。
+
+**验证**：`:app:assembleDebug` 绿、`:app:testDebugUnitTest` **800 例 / 0 失败**（原 794 + 新增 `PlaybackCastAbortStateTest` 6 例：初值 / 置位与清除 / `beginSession()` 清除 / 同会话复位不清 / 不动 `playbackStarted`）。`LOG.FILE_LOG_PREFIXES` 补 `echo-cast`（vivo 吞 logcat，应用内文件日志才是可读通道；既有的 `echo-cast prepare ...` 同样一直读不到）。
+
+**行为变化（走查勿当回归）**：① 投屏 + 净化开时投屏地址回落源地址（与 `getCastUrl` 现有还原一致）；② 投屏放弃/超时后不再自动换线，只给提示；③ 因刀 C 取消定时器，慢源投屏不再出现 15s 超时提示，而是 5 秒到点弹设备列表 + `toast_no_cast_url`。
+
+**待真机走查**（§4-20）：海报页投屏三种（普通源 / M3U8 净化开 / 附近TVBox 推送）能拿到地址并推成功；全屏与音乐页投屏成功后本地暂停；投屏后手点播放、关弹窗后手点播放均能正常起播；专项 = 自动换线开 + 慢源（解析 >15 秒）投屏**无声音**且日志见 `echo-cast abort ...` / `drop late play url` 而**无** `echo-goPlayUrl:`。设备未在线，APK 未装。
+
+**文档**：`avbox-playback-service-spec.md` §3.9 + §4-20 + §8；`.codebuddy` / `.trae` 两镜像同步。
+
+**审查修复轮（同日，两轮只读子代理审查 + 逐条复核）**
+
+- **中级（本次引入）：清除点漏项** —— 投屏收摊后，不经过 `setData` / `playCurrent` / `ensurePlaybackActive` 的 4 类"用户显式起播"入口会被 `goPlayUrl` 门禁**静默**吞掉：① 详情页画质胶囊（`DetailPlaybackPolicy.Quality` → `DetailViewModel.onQualityClick` → `PlayContainer.selectQuality` → `MusicSessionDelegate.selectQuality` → `host.playUrl`/`initParse`）；② 全屏「刷新 / 换内核 / 换软解」（`PlayerActionsDelegate.onRefreshClicked` → `replay(false)` → `replayCurrentAddress` → 直调 `goPlayUrl`）；③ 上一集 / 下一集（控制栏与通知栏 NEXT/PREV，`playNext/playPrevious` → `playViaScheduler` → `play()`）；④ 换解析接口（`changeParse` → `doParse`）。修法 = 4 处一行清除：`PlaybackController.play()`、`PlaybackController.selectQuality()`（**先清再转调**：净化关时它同步走到 `goPlayUrl`，后置清除来不及）、`PlaybackController.doParse()`、`PlayContainer.replayCurrentAddress()`。**清点依据**：穷举核对 `autoRetry` / `tryNextLine` / `tryNextLineIfEnabled` / `retryWithFreshResolve` / `trySoftDecodeFallback` / `retryAfterStartedError` 的全部调用方，自动路径能到达 `play()` 的只有那 5 个已拦入口的下游，故 `play()` 可安全当"用户起播"入口（`ensurePlaybackActive` 顺带统一走容器转发方法）。走查前未清标记时，画质胶囊 / 全屏刷新 / 上下集 / 换解析都是"点了没反应"，属用户可见回归。
+- **低（本次引入，登记不修）**：① 三处 drop 分支附带 `stopMusicSessionForFailedPlayback()` + 超时提示 —— M3U8 净化分支（`PlaybackStarter.playUrl` 先武装 20s、净化交付不经 `goPlayUrl`）在净化不交付时 20s 后可达，当前路径下无对象可撤会话，仅一次多余提示；② `castAborted` 非 volatile（写点全主线程，读点可来自嗅探 / Thunder 回调线程，无实测判据；与既有 `castPrepareOnly` 同风格）；③ `clearCastAbort()` 不作废在途净化交付（有 `PlayLoader` seq 与 jx/嗅探 gen 兜底，且被接受地址通常正是用户当下要播的内容）；④ `PlaybackFetch.handlePlayResult` 不在拦截面（收摊后预载通道的一次交付仍会执行 `setWebPlayUrl(null)` 等副作用，起播本身已拦）；⑤ 新增不变量"用户起播入口必须先清 abort"无静态判据，已改写进 §4-20 必走清单替代。
+- **文档同步**：§3.9 重写（清除点清单 + 五入口"统一不重试（提示由调用方决定）"措辞改正 + 日志前缀写全 + 说明 `abort set` 在投屏成功路径同样打印，判"放弃"要看有没有 `keep playback off`）；§4-20 补"放弃投屏后逐个走一遍用户起播入口"必走清单；§8 补修订行；`LOG.FILE_LOG_PREFIXES` 再补 `echo-resolvePlayUrl` / `echo-playM3u8`（归因侧证据，原判据只依赖 `echo-cast` / `echo-goPlayUrl` / `echo-autoRetry`）。
+- **验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **800 例 / 0 失败**（本修复轮未加单测：清除点是调用点，纯 JVM 不可覆盖，判据交给 §4-20 真机走查）。
+
+**第二轮审查（同日，独立只读 ×2 + 文档对账，结论：可收尾）**
+
+- **代码侧无阻断/无高/无中**：5 个清除点的全部调用方逐条追溯后确认"无非用户自动路径能清 `castAborted`"（`PlaybackHostApi` / 通知栏 / 媒体会话 / 音频焦点 / 内核 ERROR 自恢复 / HLS 切片重试 / 预载完成 / 直播接管 / DLNA 出口逐个排除；重试链 `host.play(false)` 的两处上游守卫逐条列出）；每个清除点都是"先清后判"；上游入口穷举后无"不清且可达"的新遗漏；上一轮四类入口全部闭合。
+- **本轮修掉两条低项**：① `castAborted` 加 `@Volatile`（`goPlayUrl` 入口判定可在 `PlayUrlResolver` 的线程池执行，本类其它字段只在主线程读；不加则存在"后台线程读到旧值 → 空 URL 分支 → `play(false)` 在后台把标记写回 false"的理论链）；② 单测 `abortSurvivesPlayLevelResets` 补 `userSelfRescue()`。
+- **文档判据修 3 处（第二轮主要产出，均为本轮自己写错）**：① §3.9 "自动地址一律在 `goPlayUrl` 被拦"收窄 —— 净化**启动**分支与无页面 `HeadlessView` / 音乐页桥的交付不经 `goPlayUrl`（投屏窗口内页面必在 ⇒ 不可达，登记为脆弱点）；② §4-20 删掉"伴随 `echo-resolvePlayUrl timeout` / `echo-autoRetry`"——收摊（刀 C）已取消 15s/20s 定时器、drop 闸门又在重试入口之前，这些行**不应**出现；③ `echo-goPlayUrl:` 判据改为"其后不得有起播证据（`echo-setDataSource` / `codec-init`）"——它打在入口判定之前，竞态下会与 `drop late play url` 同时出现。另：§4.4（UI 活规范）补 §3.9 交叉引用、`SKILL.md` 文档地图 §4 编号补 19/20、方案档 §7.3 判据改写。
+- **登记不修（低）**：错误浮层的"重试"入口与自动重试共用方法被一并拦（有播放胶囊/刷新/画质三条替代路径）；净化启动/无页面交付不在拦截面；三处 drop 分支附带的提示与会话收摊；`clearCastAbort()` 不作废在途净化交付；`PlaybackFetch.handlePlayResult` 不在拦截面；无静态判据守"起播入口必清"；`.codebuddy/skills/android/features.md` 是 `history/features.md` 的多余顶层副本。
+- **验证**：`:app:assembleDebug` 绿 + `:app:testDebugUnitTest` **800 例 / 0 失败**。

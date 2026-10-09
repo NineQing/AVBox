@@ -193,6 +193,7 @@ class DetailActivity : BaseActivity(), PageHost {
         val container = ensurePlayContainer()
         cancelCastWait()
         container.endCastPrepare()
+        container.clearCastAbort()
         val session = vm.preparePlaySession()
         if (session == null) {
             container.clearSourceSwitchTip()

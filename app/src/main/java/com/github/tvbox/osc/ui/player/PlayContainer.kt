@@ -226,6 +226,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     }
 
     fun ensurePlaybackActive() {
+        clearCastAbort()
         val view = mVideoView ?: return
         if (view.isPlaying) return
         when (view.playState) {
@@ -357,11 +358,16 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         scheduler.setCastPrepareOnly(true)
     }
 
+    fun clearCastAbort() {
+        scheduler.clearCastAbort()
+    }
+
     fun endCastPrepare() {
         if (!castPrepareOnly && !scheduler.isCastPrepareOnly()) return
         castPrepareOnly = false
         scheduler.closeCastPrepare()
         scheduler.stopParse()
+        scheduler.cancelPlayTimeout()
         LOG.i("echo-cast prepare end")
     }
 
@@ -536,6 +542,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     }
 
     fun replayCurrentAddress() {
+        clearCastAbort()
         overlays.reloadDanmuForPlayback()
         val url = scheduler.webPlayUrl()
         if (url != null && !url.isEmpty()) {

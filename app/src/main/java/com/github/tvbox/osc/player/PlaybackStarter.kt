@@ -280,6 +280,12 @@ class PlaybackStarter(private val host: Host) {
     }
 
     fun goPlayUrl(url: String, headers: HashMap<String, String>?) {
+        val st = host.attemptState()
+        if (st.castAborted) {
+            LOG.i("echo-cast abort: drop late play url")
+            host.cancelPlayTimeout()
+            return
+        }
         LOG.i("echo-goPlayUrl:" + url)
         if (TextUtils.isEmpty(url)) {
             host.handleResolvePlayUrlFailed(PlaybackController.str(R.string.player_play_url_empty))
@@ -287,12 +293,16 @@ class PlaybackStarter(private val host: Host) {
         }
         val bridge = host.view()
         if (bridge == null || !bridge.isPageAlive()) return
-        val st = host.attemptState()
         playUrlGeneration = host.resolverCurrentGen()
         val finalUrl = url
         bridge.runOnUi(Runnable {
             if (st.switchStopPending) {
                 LOG.i("echo-ignore goPlayUrl while source switching")
+                return@Runnable
+            }
+            if (st.castAborted) {
+                LOG.i("echo-cast abort: drop late play url")
+                host.cancelPlayTimeout()
                 return@Runnable
             }
             if (playUrlGeneration != host.resolverCurrentGen()) {
